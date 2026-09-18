@@ -2028,6 +2028,39 @@ td select {
     display: none;
   }
 
+  /* --- "Ver tabela" tables inside chart cards ------------------------- */
+  .chart-table-view {
+    overflow-x: visible;
+  }
+
+  .chart-table-view table {
+    width: 100%;
+    font-size: 0.78rem;
+  }
+
+  .chart-table-view th,
+  .chart-table-view td {
+    white-space: normal;
+    padding: 0.45rem 0.3rem;
+    overflow-wrap: anywhere;
+  }
+
+  .chart-table-view th:not(:first-child),
+  .chart-table-view td:not(:first-child) {
+    white-space: nowrap;
+    text-align: right;
+  }
+
+  /* The donut is drawn at a fixed 260px; without this the stylesheet's
+     svg width rule stretched it to the full card width on a phone. */
+  .chart-body svg.chart-donut {
+    display: block;
+    width: 260px;
+    max-width: 100%;
+    height: auto;
+    margin: 0 auto;
+  }
+
   /* Stacked cards in Ajustes touched each other with no gap. */
   #view-ajustes,
   #ajustes-usuarios-section {

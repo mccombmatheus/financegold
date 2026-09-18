@@ -470,7 +470,7 @@ function renderDonutChart(container, items) {
   const rOuter = size / 2 - 8;
   const rInner = rOuter * 0.6;
 
-  const svg = svgEl("svg", { viewBox: `0 0 ${size} ${height}`, width: size, height, role: "img" });
+  const svg = svgEl("svg", { viewBox: `0 0 ${size} ${height}`, width: size, height, role: "img", class: "chart-donut" });
 
   let angle = 0;
   let largestIndex = 0;
