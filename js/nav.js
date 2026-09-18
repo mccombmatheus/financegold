@@ -73,6 +73,24 @@ function applySidebarCollapsed(collapsed) {
   btn.setAttribute("aria-label", btn.title);
 }
 
+// Off-canvas drawer on mobile (see the @media (max-width: 860px) block in
+// css/style.css) — toggled by #sidebar-mobile-toggle, closed by tapping the
+// backdrop or picking a nav item. Toggling ".mobile-open" has no effect
+// outside that breakpoint, so this is safe to call unconditionally.
+function setSidebarMobileOpen(open) {
+  document.getElementById("sidebar").classList.toggle("mobile-open", open);
+  document.getElementById("sidebar-backdrop").hidden = !open;
+}
+
+function setupSidebarMobileDrawer() {
+  document.getElementById("sidebar-mobile-toggle").addEventListener("click", () => {
+    setSidebarMobileOpen(true);
+  });
+  document.getElementById("sidebar-backdrop").addEventListener("click", () => {
+    setSidebarMobileOpen(false);
+  });
+}
+
 function setupSidebarCollapse() {
   applySidebarCollapsed(loadSidebarCollapsedPref());
 
@@ -101,12 +119,16 @@ function setupNavigation() {
   navigationInitialized = true;
 
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
-    btn.addEventListener("click", () => setActiveView(btn.dataset.view));
+    btn.addEventListener("click", () => {
+      setActiveView(btn.dataset.view);
+      setSidebarMobileOpen(false);
+    });
   });
   document.querySelectorAll(".nav-group-toggle").forEach((btn) => {
     btn.addEventListener("click", () => toggleSubmenu(btn.dataset.group));
   });
 
   setupSidebarCollapse();
+  setupSidebarMobileDrawer();
   setupCommandPalette();
 }

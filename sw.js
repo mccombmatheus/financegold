@@ -1,4 +1,4 @@
-const CACHE_NAME = "financegold-shell-v4";
+const CACHE_NAME = "financegold-shell-v7";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -63,7 +63,12 @@ self.addEventListener("fetch", (event) => {
           }
           return response;
         })
-        .catch(() => cached);
+        // A same-origin request with no cache entry (e.g. the browser's
+        // automatic /favicon.ico probe) and a failed network fetch used to
+        // resolve to `undefined` here, which respondWith() can't turn into a
+        // Response and crashes the whole fetch with "Failed to convert value
+        // to 'Response'". Always resolve to a real Response.
+        .catch(() => cached || new Response("", { status: 504, statusText: "Offline" }));
       return cached || networkFetch;
     })
   );
