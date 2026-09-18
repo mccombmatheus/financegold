@@ -51,20 +51,24 @@ function renderLancamentoListaTable() {
 
   filtered.forEach((r) => {
     const tr = document.createElement("tr");
+    // Column keys become classes (lanc-col-*) so the mobile stylesheet can
+    // lay each row out as a compact card instead of a wide scrolling table.
     [
-      `#${r.linha}`,
-      formatLancamentoData(r.data),
-      r.loja || "",
-      r.conta || "",
-      r.empresa || "",
-      r.categoria || "",
-      formatBRL(r.valor),
-      r.tipo || "",
-      r.peso != null ? formatGrams(r.peso) : "",
-      r.pessoa || "",
-      r.observacao || "",
-    ].forEach((text) => {
+      ["linha", `#${r.linha}`],
+      ["data", formatLancamentoData(r.data)],
+      ["loja", r.loja || ""],
+      ["conta", r.conta || ""],
+      ["empresa", r.empresa || ""],
+      ["categoria", r.categoria || ""],
+      ["valor", formatBRL(r.valor)],
+      ["tipo", r.tipo || ""],
+      ["peso", r.peso != null ? formatGrams(r.peso) : ""],
+      ["pessoa", r.pessoa || ""],
+      ["observacao", r.observacao || ""],
+    ].forEach(([key, text]) => {
       const td = document.createElement("td");
+      td.className = `lanc-col-${key}`;
+      if (key === "valor") td.classList.add(r.tipo === "Entrada" ? "valor-entrada" : "valor-saida");
       td.textContent = text;
       tr.appendChild(td);
     });

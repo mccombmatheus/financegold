@@ -9,14 +9,17 @@ function renderUsuariosTable() {
     const tr = document.createElement("tr");
 
     const nomeTd = document.createElement("td");
+    nomeTd.className = "usuario-col-nome";
     nomeTd.textContent = usuario.nome;
     tr.appendChild(nomeTd);
 
     const emailTd = document.createElement("td");
+    emailTd.className = "usuario-col-email";
     emailTd.textContent = usuario.email;
     tr.appendChild(emailTd);
 
     const perfilTd = document.createElement("td");
+    perfilTd.className = "usuario-col-perfil";
     const select = document.createElement("select");
     ALL_ROLES.forEach((role) => {
       const opt = document.createElement("option");

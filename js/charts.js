@@ -186,6 +186,16 @@ function getContainerWidth(container) {
   return Math.max(container.getBoundingClientRect().width || 0, 280);
 }
 
+// Below this width the horizontal bar charts stop reserving a fixed label
+// column on the left (which left almost no room for the bar itself on a
+// phone) and instead put the name + value on a line above each full-width bar.
+const COMPACT_CHART_MAX_WIDTH = 480;
+
+function truncateLabel(text, maxChars) {
+  const value = String(text || "");
+  return value.length > maxChars ? value.slice(0, Math.max(1, maxChars - 1)) + "…" : value;
+}
+
 // --- Diverging bar chart (saldo por loja) ----------------------------------
 
 function renderDivergingBarChart(container, items) {
@@ -193,10 +203,11 @@ function renderDivergingBarChart(container, items) {
   if (items.length === 0) return renderEmptyState(container, "Sem lançamentos no período.");
 
   const width = getContainerWidth(container);
-  const rowHeight = 40;
-  const barThickness = 20;
-  const marginLeft = 110;
-  const marginRight = 70;
+  const compact = width < COMPACT_CHART_MAX_WIDTH;
+  const rowHeight = compact ? 54 : 40;
+  const barThickness = compact ? 14 : 20;
+  const marginLeft = compact ? 8 : 110;
+  const marginRight = compact ? 8 : 70;
   const topPad = 10;
   const height = items.length * rowHeight + topPad * 2;
   const plotWidth = width - marginLeft - marginRight;
@@ -213,16 +224,19 @@ function renderDivergingBarChart(container, items) {
 
   items.forEach((item, index) => {
     const rowY = topPad + index * rowHeight;
-    const barY = rowY + (rowHeight - barThickness) / 2;
-    const barLen = (Math.abs(item.saldo) / maxAbs) * (halfWidth - 12);
+    const barY = compact ? rowY + 26 : rowY + (rowHeight - barThickness) / 2;
+    const barLen = (Math.abs(item.saldo) / maxAbs) * (halfWidth - (compact ? 4 : 12));
     const positive = item.saldo >= 0;
     const barX = positive ? baselineX : baselineX - barLen;
     const color = positive ? "var(--diverging-pos)" : "var(--diverging-neg)";
 
     const label = svgEl("text", {
-      x: marginLeft - 12, y: rowY + rowHeight / 2 + 4, "text-anchor": "end", class: "chart-tick-label",
+      x: compact ? marginLeft : marginLeft - 12,
+      y: compact ? rowY + 14 : rowY + rowHeight / 2 + 4,
+      "text-anchor": compact ? "start" : "end",
+      class: "chart-tick-label",
     });
-    label.textContent = item.loja;
+    label.textContent = compact ? truncateLabel(item.loja, Math.floor((width - 120) / 6.4)) : item.loja;
     svg.appendChild(label);
 
     const rect = svgEl("rect", {
@@ -231,9 +245,9 @@ function renderDivergingBarChart(container, items) {
     svg.appendChild(rect);
 
     const valueLabel = svgEl("text", {
-      x: positive ? barX + barLen + 8 : barX - 8,
-      y: rowY + rowHeight / 2 + 4,
-      "text-anchor": positive ? "start" : "end",
+      x: compact ? width - marginRight : positive ? barX + barLen + 8 : barX - 8,
+      y: compact ? rowY + 14 : rowY + rowHeight / 2 + 4,
+      "text-anchor": compact ? "end" : positive ? "start" : "end",
       class: "chart-direct-label",
     });
     valueLabel.textContent = formatCompactBRL(item.saldo);
@@ -268,10 +282,11 @@ function renderRankedBarChart(container, items) {
   if (items.length === 0) return renderEmptyState(container, "Sem lançamentos no período.");
 
   const width = getContainerWidth(container);
-  const rowHeight = 32;
-  const barThickness = 18;
-  const marginLeft = 160;
-  const marginRight = 90;
+  const compact = width < COMPACT_CHART_MAX_WIDTH;
+  const rowHeight = compact ? 46 : 32;
+  const barThickness = compact ? 14 : 18;
+  const marginLeft = compact ? 8 : 160;
+  const marginRight = compact ? 8 : 90;
   const topPad = 10;
   const height = items.length * rowHeight + topPad * 2;
   const plotWidth = width - marginLeft - marginRight;
@@ -281,13 +296,16 @@ function renderRankedBarChart(container, items) {
 
   items.forEach((item, index) => {
     const rowY = topPad + index * rowHeight;
-    const barY = rowY + (rowHeight - barThickness) / 2;
+    const barY = compact ? rowY + 22 : rowY + (rowHeight - barThickness) / 2;
     const barLen = Math.max((item.valor / maxValue) * plotWidth, 1);
 
     const label = svgEl("text", {
-      x: marginLeft - 12, y: rowY + rowHeight / 2 + 4, "text-anchor": "end", class: "chart-tick-label",
+      x: compact ? marginLeft : marginLeft - 12,
+      y: compact ? rowY + 12 : rowY + rowHeight / 2 + 4,
+      "text-anchor": compact ? "start" : "end",
+      class: "chart-tick-label",
     });
-    label.textContent = item.categoria;
+    label.textContent = compact ? truncateLabel(item.categoria, Math.floor((width - 110) / 6.4)) : item.categoria;
     svg.appendChild(label);
 
     const rect = svgEl("rect", {
@@ -295,9 +313,14 @@ function renderRankedBarChart(container, items) {
     });
     svg.appendChild(rect);
 
-    if (index === 0) {
+    // Desktop labels only the top bar (selective direct labeling); the compact
+    // layout has a dedicated value slot on each name line, so every row gets one.
+    if (index === 0 || compact) {
       const valueLabel = svgEl("text", {
-        x: marginLeft + barLen + 8, y: rowY + rowHeight / 2 + 4, "text-anchor": "start", class: "chart-direct-label",
+        x: compact ? width - marginRight : marginLeft + barLen + 8,
+        y: compact ? rowY + 12 : rowY + rowHeight / 2 + 4,
+        "text-anchor": compact ? "end" : "start",
+        class: "chart-direct-label",
       });
       valueLabel.textContent = formatCompactBRL(item.valor);
       svg.appendChild(valueLabel);

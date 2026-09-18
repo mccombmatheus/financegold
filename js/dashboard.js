@@ -69,7 +69,7 @@ function computeTrend(current, previous) {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
-function buildKpiTile({ label, value, icon, iconClass, trend, hero, invertTrendColor }) {
+function buildKpiTile({ label, labelExtra, value, icon, iconClass, trend, hero, invertTrendColor }) {
   const tile = document.createElement("div");
   tile.className = `stat-tile${hero ? " stat-tile-hero" : ""}`;
 
@@ -79,6 +79,13 @@ function buildKpiTile({ label, value, icon, iconClass, trend, hero, invertTrendC
   const labelEl = document.createElement("span");
   labelEl.className = "stat-label";
   labelEl.textContent = label;
+  if (labelExtra) {
+    // Qualifier hidden on narrow screens so every tile's label fits one line.
+    const extraEl = document.createElement("span");
+    extraEl.className = "stat-label-extra";
+    extraEl.textContent = labelExtra;
+    labelEl.appendChild(extraEl);
+  }
 
   const iconBadge = document.createElement("div");
   iconBadge.className = `stat-icon stat-icon-${iconClass}`;
@@ -104,7 +111,14 @@ function buildKpiTile({ label, value, icon, iconClass, trend, hero, invertTrendC
     const isFavorable = invertTrendColor ? !isUp : isUp;
     const trendEl = document.createElement("div");
     trendEl.className = `stat-trend ${isFavorable ? "positive" : "negative"}`;
-    trendEl.textContent = `${isUp ? "↑" : "↓"} ${Math.abs(trend).toFixed(1)}% vs. período anterior`;
+    // A near-zero previous period (common for Saldo) makes the percentage
+    // absurd (e.g. 53818604.9%) — cap the display instead of showing noise.
+    const pct = Math.abs(trend);
+    trendEl.textContent = `${isUp ? "↑" : "↓"} ${pct >= 1000 ? "999%+" : pct.toFixed(1) + "%"}`;
+    const refEl = document.createElement("span");
+    refEl.className = "stat-trend-ref";
+    refEl.textContent = " vs. período anterior";
+    trendEl.appendChild(refEl);
     tile.appendChild(trendEl);
   }
 
@@ -121,7 +135,8 @@ function renderKpis(records, prevRecords) {
 
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Entradas do período",
+      label: "Entradas",
+      labelExtra: " do período",
       value: formatBRL(kpis.entradas),
       icon: KPI_ICONS.up,
       iconClass: "success",
@@ -130,7 +145,8 @@ function renderKpis(records, prevRecords) {
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Saídas do período",
+      label: "Saídas",
+      labelExtra: " do período",
       value: formatBRL(kpis.saidas),
       icon: KPI_ICONS.down,
       iconClass: "danger",
@@ -140,7 +156,8 @@ function renderKpis(records, prevRecords) {
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Saldo do período",
+      label: "Saldo",
+      labelExtra: " do período",
       value: formatBRL(kpis.saldo),
       icon: KPI_ICONS.scale,
       iconClass: "hero",
@@ -150,7 +167,8 @@ function renderKpis(records, prevRecords) {
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Ouro comprado (g)",
+      label: "Ouro comprado",
+      labelExtra: " (g)",
       value: formatGrams(kpis.pesoComprado),
       icon: KPI_ICONS.gem,
       iconClass: "neutral",
@@ -159,7 +177,8 @@ function renderKpis(records, prevRecords) {
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Ouro vendido (g)",
+      label: "Ouro vendido",
+      labelExtra: " (g)",
       value: formatGrams(kpis.pesoVendido),
       icon: KPI_ICONS.gem,
       iconClass: "neutral",

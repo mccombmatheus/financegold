@@ -1,4 +1,4 @@
-const CACHE_NAME = "financegold-shell-v7";
+const CACHE_NAME = "financegold-shell-v9";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -53,23 +53,28 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (event.request.method !== "GET") return;
 
+  // Network-first, cache as the offline fallback. This used to be
+  // cache-first, which meant a phone that had visited the site once kept
+  // showing the old HTML/CSS/JS after a deploy (the new version only landed
+  // on the *next* load). `cache: "no-cache"` also bypasses GitHub Pages'
+  // 10-minute HTTP cache so a fresh deploy shows up immediately when online.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const networkFetch = fetch(event.request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          }
-          return response;
-        })
-        // A same-origin request with no cache entry (e.g. the browser's
-        // automatic /favicon.ico probe) and a failed network fetch used to
-        // resolve to `undefined` here, which respondWith() can't turn into a
-        // Response and crashes the whole fetch with "Failed to convert value
-        // to 'Response'". Always resolve to a real Response.
-        .catch(() => cached || new Response("", { status: 504, statusText: "Offline" }));
-      return cached || networkFetch;
-    })
+    fetch(event.request, { cache: "no-cache" })
+      .then((response) => {
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      // Offline (or the fetch failed): serve the cached copy. If there is
+      // none either (e.g. the browser's automatic /favicon.ico probe),
+      // resolve to a real Response — respondWith() can't turn `undefined`
+      // into one and would crash with "Failed to convert value to 'Response'".
+      .catch(() =>
+        caches
+          .match(event.request)
+          .then((cached) => cached || new Response("", { status: 504, statusText: "Offline" }))
+      )
   );
 });
