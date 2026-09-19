@@ -6,11 +6,12 @@
 <meta name="theme-color" content="#060504">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="FinanGold">
+<meta name="apple-mobile-web-app-title" content="Finan.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://script.google.com https://script.googleusercontent.com https://sheets.googleapis.com https://oauth2.googleapis.com https://www.googleapis.com https://accounts.google.com https://fonts.googleapis.com https://fonts.gstatic.com; frame-src https://accounts.google.com; base-uri 'self'; form-action 'self'; object-src 'none';">
-<title>FinanGold — Financeiro</title>
+<script src="js/seguranca.js"></script>
+<title>Finan. — Financeiro</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23e3b341'/%3E%3Ctext x='16' y='22' font-family='Arial,sans-serif' font-size='17' font-weight='700' fill='%23191203' text-anchor='middle'%3EF%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -25,14 +26,14 @@
     <div class="auth-art" data-art="brand"></div>
     <div class="auth-brand-mark">
       <span class="auth-logo" data-art="logo-lg"></span>
-      <span class="auth-wordmark">FinanGold</span>
+      <span class="auth-wordmark">Finan.</span>
     </div>
     <div class="auth-brand-copy">
-      <div class="auth-tag">[ ouro · caixa · equipe ]</div>
+      <div class="auth-tag">[ caixa · estoque · equipe ]</div>
       <div class="auth-headline">Controle financeiro,<br>estoque e equipe —<br>num só lugar.</div>
       <div class="auth-subhead">Conectado direto à sua planilha. Sem planilhas soltas, sem retrabalho — os dados certos, na hora certa.</div>
     </div>
-    <div class="auth-brand-foot">© 2026 FinanGold</div>
+    <div class="auth-brand-foot">© 2026 Finan.</div>
   </div>
   <div class="auth-panel">
     <div class="auth-panel-inner">
@@ -44,13 +45,13 @@
         Continuar com Google
       </button>
       <p id="login-status" class="status-message"></p>
-      <p class="auth-fineprint">Ao continuar, você concorda com o uso dos dados da sua empresa somente dentro do FinanGold.<br><a href="privacidade.html">Política de Privacidade</a> · <a href="termos.html">Termos de Serviço</a></p>
+      <p class="auth-fineprint">Ao continuar, você concorda com o uso dos dados da sua empresa somente dentro do Finan.<br><a href="privacidade.html">Política de Privacidade</a> · <a href="termos.html">Termos de Serviço</a></p>
     </div>
   </div>
 </div>
 
 <div id="company-picker-screen" class="login-screen" hidden>
-  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">FinanGold</span></div></div>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">Finan.</span></div></div>
   <div class="auth-panel">
     <div class="auth-panel-inner">
       <div class="auth-eyebrow">Bem-vindo de volta</div>
@@ -62,7 +63,7 @@
 </div>
 
 <div id="cadastro-screen" class="login-screen" hidden>
-  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">FinanGold</span></div></div>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">Finan.</span></div></div>
   <div class="auth-panel">
     <div class="auth-panel-inner">
       <div class="auth-eyebrow">Configuração inicial</div>
@@ -78,7 +79,7 @@
 </div>
 
 <div id="acesso-negado-screen" class="login-screen" hidden>
-  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">FinanGold</span></div></div>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">Finan.</span></div></div>
   <div class="auth-panel">
     <div class="auth-panel-inner">
       <div class="auth-eyebrow">Acesso restrito</div>
@@ -90,7 +91,7 @@
 </div>
 
 <div id="solicitar-acesso-screen" class="login-screen" hidden>
-  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">FinanGold</span></div></div>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">Finan.</span></div></div>
   <div class="auth-panel">
     <div class="auth-panel-inner">
       <div class="auth-eyebrow">[ pedir acesso ]</div>
@@ -98,8 +99,8 @@
       <p class="auth-lede" id="solicitar-lede"></p>
       <form id="solicitar-form" class="solicitar-form">
         <div class="tipo-pedido" role="radiogroup" aria-label="Tipo de pedido">
-          <label class="tipo-opcao"><input type="radio" name="solicitar-tipo" value="nova" checked> Quero usar o FinanGold na minha empresa</label>
-          <label class="tipo-opcao"><input type="radio" name="solicitar-tipo" value="existente"> Trabalho em uma empresa que já usa o FinanGold</label>
+          <label class="tipo-opcao"><input type="radio" name="solicitar-tipo" value="nova" checked> Quero usar o Finan. na minha empresa</label>
+          <label class="tipo-opcao"><input type="radio" name="solicitar-tipo" value="existente"> Trabalho em uma empresa que já usa o Finan.</label>
         </div>
         <input type="text" id="solicitar-nome" placeholder="Seu nome" autocomplete="name" maxlength="80" required>
         <input type="text" id="solicitar-empresa" placeholder="Nome da sua empresa" maxlength="80" required>
@@ -116,7 +117,7 @@
 
 <div id="sistema-screen" class="sistema-screen" hidden>
   <header class="sistema-topo">
-    <div class="sistema-marca"><span class="sidebar-logo" data-art="logo"></span><span class="sidebar-title">FinanGold</span></div>
+    <div class="sistema-marca"><span class="sidebar-logo" data-art="logo"></span><span class="sidebar-title">Finan.</span></div>
     <div class="sistema-topo-meio">
       <span class="topbar-eyebrow">// painel do sistema</span>
       <span class="sistema-email" id="sistema-email"></span>
@@ -143,6 +144,10 @@
           <div class="form-field">
             <label for="empresa-add-nome">Nome da empresa</label>
             <input type="text" id="empresa-add-nome" maxlength="80" required>
+          </div>
+          <div class="form-field">
+            <label for="empresa-add-segmento">Segmento</label>
+            <select id="empresa-add-segmento" required></select>
           </div>
           <div class="form-field">
             <label for="empresa-add-email">E-mail Google do administrador</label>
@@ -173,7 +178,8 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="sidebar-brand">
-        <div class="sidebar-brand-row"><span class="sidebar-logo" data-art="logo"></span><span class="sidebar-title">FinanGold</span></div>
+        <div class="sidebar-brand-row"><span class="sidebar-logo" data-art="logo"></span><span class="sidebar-title" id="sidebar-title">Finan.</span></div>
+        <span class="sidebar-segmento" id="sidebar-segmento"></span>
         <span class="empresa-badge" id="sidebar-empresa"></span>
       </div>
       <button type="button" id="sidebar-collapse-btn" class="sidebar-collapse-btn" title="Minimizar menu" aria-label="Minimizar menu">‹</button>
@@ -197,7 +203,7 @@
         </button>
         <div class="nav-submenu" id="submenu-estoque" hidden>
           <button type="button" class="nav-item nav-subitem" data-view="estoque-lista">Consultar estoque</button>
-          <button type="button" class="nav-item nav-subitem" data-view="estoque-form">Nova peça</button>
+          <button type="button" class="nav-item nav-subitem" data-view="estoque-form" data-vocab="novoItem">Nova peça</button>
         </div>
       </div>
       <button type="button" class="nav-item" data-view="ajustes"><span class="nav-idx">04</span>Ajustes</button>
@@ -336,7 +342,7 @@
                 <th>Categoria</th>
                 <th>Valor</th>
                 <th>Tipo</th>
-                <th>Peso</th>
+                <th data-vocab="qtdNome">Peso</th>
                 <th>Pessoa</th>
                 <th>Observação</th>
               </tr>
@@ -387,7 +393,7 @@
               <select id="field-pessoa" required></select>
             </div>
             <div class="form-field">
-              <label for="field-peso">Peso (g) — opcional</label>
+              <label for="field-peso"><span data-vocab="qtdRotulo">Peso (g)</span> — opcional</label>
               <input type="number" id="field-peso" step="0.01" min="0">
             </div>
             <div class="form-field form-field-wide">
@@ -395,6 +401,7 @@
               <input type="text" id="field-observacao">
             </div>
           </div>
+          <div class="form-grid" id="lancamento-extras-grid" hidden></div>
           <div class="form-actions">
             <button type="submit" id="btn-salvar-lancamento">Salvar lançamento</button>
             <span id="form-status" class="status-message"></span>
@@ -434,7 +441,7 @@
       </section>
 
       <section class="view-section card" data-view="estoque-form" id="view-estoque-form" hidden>
-        <h2>Nova peça</h2>
+        <h2 data-vocab="novoItem">Nova peça</h2>
         <form id="estoque-form" class="lancamento-form">
           <div class="form-grid">
             <div class="form-field">
@@ -458,11 +465,11 @@
               <input type="text" id="estoque-field-estado" placeholder="Ex: Venda Direta">
             </div>
             <div class="form-field">
-              <label for="estoque-field-peso">Peso (g)</label>
+              <label for="estoque-field-peso" data-vocab="qtdRotulo">Peso (g)</label>
               <input type="number" id="estoque-field-peso" step="0.01" min="0.01" required>
             </div>
             <div class="form-field">
-              <label for="estoque-field-pureza">Pureza (k) — opcional</label>
+              <label for="estoque-field-pureza"><span data-vocab="espRotulo">Pureza (k)</span> — opcional</label>
               <input type="number" id="estoque-field-pureza" step="0.1" min="0">
             </div>
             <div class="form-field">
@@ -482,8 +489,9 @@
               <input type="text" id="estoque-field-observacao">
             </div>
           </div>
+          <div class="form-grid" id="estoque-extras-grid" hidden></div>
           <div class="form-actions">
-            <button type="submit" id="btn-salvar-estoque">Salvar peça</button>
+            <button type="submit" id="btn-salvar-estoque" data-vocab="salvarItem">Salvar peça</button>
             <span id="estoque-form-status" class="status-message"></span>
           </div>
         </form>
@@ -588,6 +596,27 @@
             <p id="usuarios-admin-status" class="status-message"></p>
           </section>
 
+          <section class="card" id="ajustes-conectar-section">
+            <h2>Conectar planilha</h2>
+            <p class="field-hint">O app reconhece sozinho as colunas da sua planilha, mesmo fora de ordem ou com nomes diferentes. Se as abas têm outros nomes (por exemplo "Movimentações" em vez de "Lançamento"), analise a planilha aqui e confirme qual aba é o fluxo de caixa, o estoque e as listas.</p>
+            <div id="conectar-leitura" class="conectar-leitura"></div>
+            <div class="form-actions">
+              <button type="button" id="btn-conectar-analisar">Analisar planilha</button>
+              <span id="conectar-status" class="status-message"></span>
+            </div>
+            <div id="conectar-resultado" hidden>
+              <div class="table-wrapper">
+                <table id="conectar-table">
+                  <thead><tr><th>Aba</th><th>O que é</th><th>Colunas reconhecidas</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <div class="form-actions">
+                <button type="button" id="btn-conectar-salvar">Salvar conexão</button>
+              </div>
+            </div>
+          </section>
+
           <section class="card" id="ajustes-listas-section">
             <h2>Listas de apoio</h2>
             <p class="field-hint">São as opções que aparecem nos formulários (lojas, contas, categorias, pessoas...). Adicione aqui o que a sua empresa usa.</p>
@@ -622,14 +651,18 @@
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/config.js"></script>
 <script src="js/tenants.js"></script>
+<script src="js/segmentos.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/sheets.js"></script>
+<script src="js/esquema.js"></script>
+<script src="js/abas.js"></script>
 <script src="js/lancamentos.js"></script>
 <script src="js/lookups.js"></script>
 <script src="js/roles.js"></script>
 <script src="js/usuarios.js"></script>
 <script src="js/usuarios-admin.js"></script>
 <script src="js/listas-admin.js"></script>
+<script src="js/conectar.js"></script>
 <script src="js/sistema.js"></script>
 <script src="js/solicitar-acesso.js"></script>
 <script src="js/art.js"></script>

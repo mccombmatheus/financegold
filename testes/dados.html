@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Testes da camada de dados</title></head>
+<body>
+<h3 style="font-family:sans-serif">Testes da camada de dados (leitura e escrita com planilhas simuladas)</h3>
+<pre id="out">rodando…</pre>
+<script>window.addEventListener("error",function(e){document.getElementById("out").textContent="ERRO: "+e.message+" ("+String(e.filename).split("/").pop()+":"+e.lineno+")";});</script>
+<script src="../js/config.js"></script>
+<script src="../js/sheets.js"></script>
+<script src="../js/esquema.js"></script>
+<script src="../js/abas.js"></script>
+<script src="../js/lancamentos.js"></script>
+<script src="../js/lookups.js"></script>
+<script src="../js/estoque.js"></script>
+<script src="../js/form.js"></script>
+<script>
+// ---- stubs for the few things other files provide
+function isNetworkError(err) { return err instanceof TypeError; }
+function isMaster(role) { return role === "Master"; }
+let currentUserRole = "Master";
+
+const results = [];
+const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const serial = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000);
+const semExtras = (r) => { const c = Object.assign({}, r); delete c.extras; return c; };
+
+// ---- an in-memory "Google Sheets" behind the gateway protocol
+let workbook = {};
+let calls = [];
+let offline = false;
+function colIndex(letters) { let n = 0; for (const ch of letters) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; }
+function parseA1(range) {
+  const m = range.match(/^(?:'((?:[^']|'')+)'|([^'!]+))!([A-Z]+)(\d*)(?::([A-Z]+)(\d*))?$/);
+  if (!m) throw new Error("bad range " + range);
+  return { tab: (m[1] ? m[1].replace(/''/g, "'") : m[2]), c1: colIndex(m[3]), r1: m[4] ? Number(m[4]) : 1, c2: m[5] ? colIndex(m[5]) : colIndex(m[3]), r2: m[6] ? Number(m[6]) : null };
+}
+const vazio = (v) => v === undefined || v === null || v === "";
+window.fetch = async (url, opts) => {
+  if (offline) throw new TypeError("Failed to fetch");
+  const b = JSON.parse(opts.body);
+  calls.push(b.action + " " + (b.range || ""));
+  const fail = (msg) => ({ json: async () => ({ ok: false, status: 500, error: msg }) });
+  if (b.action === "getTitles") return { json: async () => ({ ok: true, data: { titles: Object.keys(workbook) } }) };
+  if (b.action === "getValues") {
+    const r = parseA1(b.range);
+    if (!workbook[r.tab]) return fail("Erro interno no servidor do app.");
+    const dados = workbook[r.tab];
+    const fim = r.r2 === null ? dados.length : Math.min(r.r2, dados.length);
+    const out = [];
+    for (let i = r.r1 - 1; i < fim; i += 1) {
+      const linha = (dados[i] || []).slice(r.c1, r.c2 + 1);
+      while (linha.length && vazio(linha[linha.length - 1])) linha.pop();
+      out.push(linha);
+    }
+    while (out.length && out[out.length - 1].length === 0) out.pop();
+    return { json: async () => ({ ok: true, data: { values: JSON.parse(JSON.stringify(out)) } }) };
+  }
+  if (b.action === "updateValues") {
+    const r = parseA1(b.range);
+    if (!workbook[r.tab]) return fail("Erro interno no servidor do app.");
+    while (workbook[r.tab].length < r.r1) workbook[r.tab].push([]);
+    const linha = workbook[r.tab][r.r1 - 1];
+    b.values[0].forEach((v, i) => { linha[r.c1 + i] = v; });
+    for (let i = 0; i < linha.length; i += 1) if (linha[i] === undefined) linha[i] = "";
+    return { json: async () => ({ ok: true, data: { updated: true } }) };
+  }
+  return fail("ação desconhecida");
+};
+function novoCenario(tabs, nomeAbaLanc) {
+  workbook = JSON.parse(JSON.stringify(tabs));
+  calls = [];
+  offline = false;
+  CONFIG.GATEWAY_URL = "https://gw.test/exec";
+  CONFIG.SPREADSHEET_ID = "SS" + Math.random().toString(36).slice(2);
+  CONFIG.SHEET_NAME = nomeAbaLanc || "Lançamento";
+  resetarAbasDaEmpresa();
+  try { localStorage.clear(); } catch (e) {}
+}
+
+// ---- the OLD code paths, as reference ("a standard sheet behaves exactly as before")
+function velhaLinhaLancamento(values) {
+  const valorFinal = values.tipo === "Saída" ? -Math.abs(values.valor) : Math.abs(values.valor);
+  return [dateInputToSheetSerial(values.data), values.loja, values.conta, values.empresa, values.categoria, valorFinal, values.tipo, values.peso ? Number(values.peso) : "", values.pessoa, values.observacao || ""];
+}
+function velhaLinhaEstoque(values) {
+  return [values.produto, values.tipo, values.marca, values.condicao || "", values.estado || "", values.pesoGrama, values.pureza || "", values.valorCusto, "", dateInputToSheetSerial(values.dataCompra), "", "", "", values.loja, false, values.observacao || ""];
+}
+
+// ---- fixtures: the standard layout (Ipanema-like)
+const HEAD_LANC = ["Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", "Peso (g)", "Pessoa", "Observação"];
+const HEAD_EST = ["Produto", "Tipo", "Marca", "Condição", "Estado", "Peso em grama", "Pureza (k)", "Valor de Custo", "Valor de venda", "Data de Compra", "Data de Venda", "Comprador", "Vendedor", "Loja", "Vendido?", "Observação"];
+const LOOK = ["Código", "Nome", "Complemento"];
+const PADRAO = {
+  "Lançamento": [HEAD_LANC,
+    [serial(2026, 9, 1), "1 - Ipanema", "1 - Caixa", "1 - Ipanema Joias", "3 - Venda de Joias", 1500, "Entrada", 12.5, "5 - Maria", "Anel"],
+    [serial(2026, 9, 2), "2 - Recreio", "2 - Banco", "1 - Ipanema Joias", "1 - Compra", -900, "Saída", 8, "7 - Ouro Fino", ""]],
+  "Estoque": [HEAD_EST,
+    ["1 - Anel", "2 - Anel", "1 - Vivara", "Excelente", "Venda Direta", 4.2, 18, 3200, "", serial(2026, 8, 3), "", "", "", "Ipanema", false, ""]],
+  "Lojas": [LOOK.concat(["Status"]), [1, "Ipanema", "1 - Ipanema"], [2, "Recreio", "2 - Recreio"]],
+  "Contas": [LOOK, [1, "Caixa", "1 - Caixa"], [2, "Banco", "2 - Banco"]],
+  "Empresas": [LOOK, [1, "Ipanema Joias", "1 - Ipanema Joias"]],
+  "Categoria": [LOOK.concat(["Status"]), [1, "Compra", "1 - Compra", "Ativo"], [2, "Aluguel", "2 - Aluguel", "Inativo"], [3, "Venda de Joias", "3 - Venda de Joias", "Ativo"]],
+  "Pessoa": [LOOK, [5, "Maria", "5 - Maria"], [7, "Ouro Fino", "7 - Ouro Fino"]],
+  "Produto": [LOOK, [1, "Anel", "1 - Anel"]],
+  "Tipo de Produto": [LOOK, [2, "Anel", "2 - Anel"]],
+  "Marcas": [LOOK, [1, "Vivara", "1 - Vivara"]],
+};
+
+(async function () {
+  // ======================= A. standard workbook: nothing changes for Ipanema
+  novoCenario(PADRAO);
+  await carregarConfiguracaoAbas("t");
+  T(nomeAba("lancamentos") === "Lançamento" && nomeAba("estoque") === "Estoque" && nomeAba("lojas") === "Lojas", "no Configuração tab: the default tab names are used");
+  const lanc = await fetchLancamentos("t");
+  T(lanc.length === 2 && lanc[0].loja === "Ipanema" && lanc[1].valor === -900 && lanc[1].tipo === "Saída" && lanc[0].linha === 2 && lanc[1].linha === 3, "standard ledger is read as before");
+
+  const val = { data: "2026-09-10", tipo: "Saída", valor: 250.5, loja: "1 - Ipanema", conta: "1 - Caixa", empresa: "1 - Ipanema Joias", categoria: "1 - Compra", pessoa: "5 - Maria", peso: "3.5", observacao: "Teste" };
+  const alvo = await submitLancamentoValues(val, "t");
+  T(alvo === 4, "the new ledger row goes right below the data (row 4)");
+  T(same(workbook["Lançamento"][3], velhaLinhaLancamento(val)), "the written row is byte-identical to what the old code wrote");
+  const valE = { data: "2026-09-11", tipo: "Entrada", valor: 99, loja: "2 - Recreio", conta: "2 - Banco", empresa: "1 - Ipanema Joias", categoria: "3 - Venda de Joias", pessoa: "7 - Ouro Fino", peso: "", observacao: "" };
+  await submitLancamentoValues(valE, "t");
+  T(same(workbook["Lançamento"][4], velhaLinhaLancamento(valE)), "an Entrada row (no weight, no note) is identical to the old one too");
+
+  const est = await fetchEstoque("t");
+  T(est.length === 1 && est[0].linha === 2 && est[0].pesoGrama === 4.2 && est[0].vendido === false && est[0].raw.length === 16, "standard stock is read as before");
+  const novo = { produto: "1 - Anel", tipo: "2 - Anel", marca: "1 - Vivara", condicao: "Bom", estado: "", pesoGrama: 5, pureza: 18, valorCusto: 1000, dataCompra: "2026-09-12", loja: "Ipanema", observacao: "" };
+  await createEstoqueItem(novo, "t");
+  T(same(workbook["Estoque"][2], velhaLinhaEstoque(novo)), "a new stock item is identical to what the old code wrote");
+  await markEstoqueVendido(est[0], { comprador: "Zé", vendedor: "Ana", valorVenda: 5000, dataVenda: "2026-09-13" }, "t");
+  const vend = workbook["Estoque"][1];
+  T(vend[8] === 5000 && vend[10] === serial(2026, 9, 13) && vend[11] === "Zé" && vend[12] === "Ana" && vend[14] === true && vend[0] === "1 - Anel" && vend[5] === 4.2, "marking sold patches only the right cells");
+  const est2 = await fetchEstoque("t");
+  await markEstoqueCustody(est2[0], "Carlos", "t");
+  T(workbook["Estoque"][1][15] === "Com vendedor: Carlos" && workbook["Estoque"][1][8] === 5000, "custody note is appended without touching other cells");
+
+  const lk = await fetchAllLookups("t");
+  T(same(lk.lojas, [{ value: "1 - Ipanema", label: "1 - Ipanema" }, { value: "2 - Recreio", label: "2 - Recreio" }]) && same(lk.lojasPlain.map((o) => o.value), ["Ipanema", "Recreio"]), "lists: lojas (complement and plain) as before");
+  T(same(lk.categorias.map((o) => o.value), ["1 - Compra", "3 - Venda de Joias"]), "lists: only the categories marked Ativo");
+  T(lk.pessoas.length === 2 && lk.produtos[0].value === "1 - Anel" && lk.tiposProduto[0].value === "2 - Anel" && lk.marcas[0].value === "1 - Vivara" && lk.contas.length === 2 && lk.empresas.length === 1, "lists: pessoas, produtos, tipos, marcas, contas, empresas");
+
+  // ======================= B. a messy workbook of another company
+  novoCenario({
+    "Configuração": [["Papel", "Aba"], ["lancamentos", "Movimentações"], ["estoque", "Produtos em loja"], ["lista:lojas", "Filiais"]],
+    "Movimentações": [
+      ["Caixa Loja X — 2026"], [],
+      ["Valor", "Descrição", "Nº NF", "Data", "Natureza", "Categoria", "Cliente"],
+      [1200, "Venda balcão", "A-15", "01/09/2026", "Receita", "Vendas", "Ana"],
+      [800, "Aluguel", "", "02/09/2026", "Despesa", "Fixas", ""],
+      [],
+      ["Total", "", "", "", "", "", ""],
+    ],
+    "Produtos em loja": [["Item", "Qtd", "Preço de custo", "Preço", "Fornecedor"], ["Coleira", 10, 12.5, 30, "Pet Center"]],
+    "Filiais": [["Nome"], ["Centro"], ["Norte"]],
+  }, "Lançamento");
+  await carregarConfiguracaoAbas("t");
+  T(nomeAba("lancamentos") === "Movimentações" && nomeAba("estoque") === "Produtos em loja" && nomeAba("lojas") === "Filiais", "Configuração points the roles to the other tab names");
+  const lm = await fetchLancamentos("t");
+  T(lm.length === 2 && lm[0].linha === 4 && lm[0].valor === 1200 && lm[0].tipo === "Entrada" && lm[1].valor === -800 && lm[1].tipo === "Saída" && lm[1].observacao === "Aluguel", "messy ledger: header on row 3, other words, text dates, expenses written positive");
+  T(same(lm[0].extras, [{ nome: "Nº NF", valor: "A-15" }]) && lm[0].pessoa === "Ana", "messy ledger: 'Cliente' is the person, 'Nº NF' an extra");
+  T(ultimoResumoLeitura.lancamentos === 1, "the 'Total' line is counted as an ignored line");
+  const es = obterEsquema("lancamentos");
+  const alvoM = await submitLancamentoValues({ data: "2026-09-15", tipo: "Saída", valor: 42, loja: "", conta: "", empresa: "", categoria: "Fixas", pessoa: "Beto", peso: "", observacao: "Luz", extras: [{ col: 2, valor: "NF-9" }] }, "t");
+  T(alvoM === 6, "new row goes into the blank row right after the data (row 6), not over the 'Total' line (row 7)");
+  T(same(workbook["Movimentações"][5], [42, "Luz", "NF-9", serial(2026, 9, 15), "Despesa", "Fixas", "Beto"]), "new row: each value in ITS column, the sheet's own words (Despesa) and its sign habit (positive)");
+  T(same(workbook["Movimentações"][6], ["Total", "", "", "", "", "", ""]), "the 'Total' line is untouched");
+  const alvoM2 = await submitLancamentoValues({ data: "2026-09-16", tipo: "Entrada", valor: 10, loja: "", conta: "", empresa: "", categoria: "Vendas", pessoa: "Ana", peso: "", observacao: "", extras: [] }, "t");
+  T(alvoM2 === 8, "the next one skips the 'Total' line and lands on row 8");
+  const lm2 = await fetchLancamentos("t");
+  T(lm2.length === 4 && lm2[2].valor === -42 && lm2[2].tipo === "Saída" && lm2[2].extras[0].valor === "NF-9" && lm2[3].tipo === "Entrada", "the new rows read back correctly");
+
+  const em = await fetchEstoque("t");
+  T(em.length === 1 && em[0].produto === "Coleira" && em[0].pesoGrama === 10 && em[0].valorCusto === 12.5 && em[0].valorVenda === 30 && em[0].extras[0].nome === "Fornecedor", "messy stock: 'Item', 'Qtd', 'Preço de custo', 'Preço' understood");
+  await markEstoqueVendido(em[0], { comprador: "Zé", vendedor: "", valorVenda: 33, dataVenda: "2026-09-13" }, "t");
+  T(workbook["Produtos em loja"][1][3] === 33 && workbook["Produtos em loja"][1][4] === "Pet Center", "marking sold writes only the columns that exist (no 'Comprador' column -> skipped) and keeps the rest");
+  let semColunas = null;
+  try { await markEstoqueCustody(em[0], "Ana", "t"); } catch (e) { semColunas = e; }
+  T(semColunas && /colunas necessárias/.test(semColunas.message), "an action that needs a column the sheet lacks (Observação) fails loudly, not silently");
+  await createEstoqueItem({ produto: "Guia", tipo: "", marca: "", pesoGrama: 4, valorCusto: 20, dataCompra: "2026-09-20", loja: "", observacao: "", extras: [{ col: 4, valor: "Agro" }] }, "t");
+  T(same(workbook["Produtos em loja"][2].slice(0, 5), ["Guia", 4, 20, "", "Agro"]) && workbook["Produtos em loja"][2].length === 5, "new stock item in a 5-column sheet: right columns, extra filled, nothing invented");
+
+  const lkm = await fetchAllLookups("t");
+  T(same(lkm.lojas.map((o) => o.value), ["Centro", "Norte"]), "lists: 'Filiais' (a plain list of names) feeds the store dropdown");
+  T(same(lkm.categorias.map((o) => o.value), ["Fixas", "Vendas"]) && same(lkm.pessoas.map((o) => o.value), ["Ana", "Beto"]), "lists with no tab are LEARNED from the ledger (categories, people)");
+  T(lkm.contas.length === 0 && lkm.empresas.length === 0, "…and a list whose column does not exist is simply empty");
+  T(lkm.produtos.length >= 1, "product list learned from the stock tab");
+
+  // ======================= C. missing tab: a clear message
+  novoCenario({ "Outra": [["a"]] });
+  currentUserRole = "Master";
+  let e1 = null; try { await fetchLancamentos("t"); } catch (e) { e1 = e; }
+  T(e1 && /não existe nesta planilha/.test(e1.message) && /Conectar planilha/.test(e1.message), "missing ledger tab: plain-language message pointing the Master to 'Conectar planilha'");
+  currentUserRole = "Editor";
+  let e2 = null; try { await fetchEstoque("t"); } catch (e) { e2 = e; }
+  T(e2 && /administrador/.test(e2.message), "…and tells a non-Master to ask the administrator");
+  currentUserRole = "Master";
+
+  // ======================= D. offline behaviour: network errors stay network errors
+  novoCenario(PADRAO);
+  await fetchLancamentos("t");
+  offline = true;
+  let e3 = null; try { await submitLancamentoValues(val, "t"); } catch (e) { e3 = e; }
+  T(e3 instanceof TypeError, "offline: a save fails with a NETWORK error (so the app queues it), not a layout error");
+  let e4 = null; try { await fetchLancamentos("t"); } catch (e) { e4 = e; }
+  T(e4 instanceof TypeError, "offline: reading fails with a network error (the cache fallback takes over)");
+  const guardado = obterEsquema("lancamentos");
+  T(guardado && guardado.cols.valor === 5, "the layout is remembered for offline use");
+  offline = false;
+
+  // ======================= E. a sheet with a formula column filled down and a fixed layout
+  const comFormula = JSON.parse(JSON.stringify(PADRAO));
+  comFormula["Lançamento"][0].push("Saldo");
+  for (let i = 1; i < 400; i += 1) { const l = comFormula["Lançamento"][i] || (comFormula["Lançamento"][i] = []); while (l.length < 10) l.push(""); l[10] = i * 10; }
+  novoCenario(comFormula);
+  const alvoF = await submitLancamentoValues(val, "t");
+  T(alvoF === 4, "a helper column filled down the sheet does not push new rows far below the data");
+  T(workbook["Lançamento"][3][10] === 30, "…and the helper column of that row is left alone");
+  const lf = await fetchLancamentos("t");
+  T(lf.length === 3 && lf[2].extras.length === 0 || lf[2].extras.some((x) => x.nome === "Saldo"), "the helper column is just an extra");
+
+  // ======================= F. a completely empty ledger with only titles
+  novoCenario({ "Lançamento": [HEAD_LANC], "Estoque": [HEAD_EST] });
+  T((await fetchLancamentos("t")).length === 0 && (await fetchEstoque("t")).length === 0, "an empty sheet with only titles reads as empty");
+  T((await submitLancamentoValues(valE, "t")) === 2, "the first row goes to row 2");
+  const semLista = await fetchAllLookups("t");
+  T(semLista.lojas.length === 1 && semLista.lojas[0].value === "2 - Recreio", "with no list tabs at all, the options come from what was just written");
+
+  const falhas = results.filter((r) => r.indexOf("FAIL") === 0);
+  document.getElementById("out").textContent = results.join("\n") + "\n\nTOTAL " + results.length + "  FAILED " + falhas.length;
+})().catch((e) => { document.getElementById("out").textContent = "CRASH " + e.stack; });
+</script></body></html>

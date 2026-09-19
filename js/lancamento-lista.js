@@ -21,6 +21,7 @@ function filterLancamentosLista(records, filters) {
     if (filters.tipo && r.tipo !== filters.tipo) return false;
     if (filters.busca) {
       const haystack = [r.categoria, r.pessoa, r.observacao, r.empresa, r.conta]
+        .concat((r.extras || []).map((e) => String(e.valor)))
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -39,7 +40,52 @@ function formatLancamentoData(date) {
   return date ? date.toLocaleDateString("pt-BR", { timeZone: "UTC" }) : "";
 }
 
+const LANC_COLUNAS = ["linha", "data", "loja", "conta", "empresa", "categoria", "valor", "tipo", "peso", "pessoa", "observacao"];
+const LANC_MAX_EXTRAS = 8;
+
+// Names of the sheet's own extra columns (the ones the app has no field for),
+// in the order they first appear.
+function nomesDeExtras(records) {
+  const nomes = [];
+  records.forEach((r) => {
+    (r.extras || []).forEach((e) => {
+      if (nomes.indexOf(e.nome) === -1 && nomes.length < LANC_MAX_EXTRAS) nomes.push(e.nome);
+    });
+  });
+  return nomes;
+}
+
+function valorDeExtra(record, nome) {
+  const achado = (record.extras || []).filter((e) => e.nome === nome)[0];
+  return achado ? String(achado.valor) : "";
+}
+
+// A column that no row uses (the sheet has no such column) is hidden, so a
+// simple sheet does not show empty "Empresa" / "Conta" columns.
+function colunasSemDados(records) {
+  const vazias = {};
+  LANC_COLUNAS.forEach((chave) => {
+    if (chave === "linha" || chave === "data" || chave === "valor") return;
+    vazias[chave] = records.every((r) => r[chave] === null || r[chave] === undefined || r[chave] === "");
+  });
+  return vazias;
+}
+
 function renderLancamentoListaTable() {
+  const nomesExtra = nomesDeExtras(allLancamentos);
+  const vazias = colunasSemDados(allLancamentos);
+  const headRow = document.querySelector("#lancamento-lista-table thead tr");
+  headRow.querySelectorAll(".th-extra").forEach((th) => th.remove());
+  Array.from(headRow.children).forEach((th, i) => {
+    th.hidden = Boolean(vazias[LANC_COLUNAS[i]]);
+  });
+  nomesExtra.forEach((nome) => {
+    const th = document.createElement("th");
+    th.className = "th-extra";
+    th.textContent = nome;
+    headRow.appendChild(th);
+  });
+
   const filters = getLancamentoListaFilters();
   const filtered = filterLancamentosLista(allLancamentos, filters)
     .slice()
@@ -72,7 +118,7 @@ function renderLancamentoListaTable() {
       ["categoria", r.categoria || ""],
       ["valor", formatBRL(r.valor)],
       ["tipo", r.tipo || ""],
-      ["peso", r.peso != null ? formatGrams(r.peso) : ""],
+      ["peso", r.peso != null ? formatQuantidade(r.peso) : ""],
       ["pessoa", r.pessoa || ""],
       ["observacao", r.observacao || ""],
     ].forEach(([key, text]) => {
@@ -80,6 +126,14 @@ function renderLancamentoListaTable() {
       td.className = `lanc-col-${key}`;
       if (key === "valor") td.classList.add(r.tipo === "Entrada" ? "valor-entrada" : "valor-saida");
       td.textContent = text;
+      td.hidden = Boolean(vazias[key]);
+      tr.appendChild(td);
+    });
+    nomesExtra.forEach((nome) => {
+      const td = document.createElement("td");
+      td.className = "lanc-col-extra";
+      td.dataset.nome = nome;
+      td.textContent = valorDeExtra(r, nome);
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
@@ -111,9 +165,10 @@ function exportLancamentosCsv() {
     return dataDiff !== 0 ? dataDiff : b.linha - a.linha;
   });
 
+  const nomesExtra = nomesDeExtras(allLancamentos);
   const headers = [
-    "#", "Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", "Peso (g)", "Pessoa", "Observação",
-  ];
+    "#", "Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", vocab("qtdRotulo"), "Pessoa", "Observação",
+  ].concat(nomesExtra);
 
   const rows = filtered.map((r) => [
     r.linha,
@@ -127,7 +182,7 @@ function exportLancamentosCsv() {
     r.peso ?? "",
     r.pessoa || "",
     r.observacao || "",
-  ]);
+  ].concat(nomesExtra.map((nome) => valorDeExtra(r, nome))));
 
   downloadCsv(`lancamentos_${todayForFilename()}.csv`, headers, rows);
 }

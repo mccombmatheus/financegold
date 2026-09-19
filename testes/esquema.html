@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Testes do esquema</title></head>
+<body>
+<h3 style="font-family:sans-serif">Testes da leitura inteligente de planilhas (js/esquema.js)</h3>
+<pre id="out">rodando…</pre>
+<script>window.addEventListener("error",function(e){document.getElementById("out").textContent="ERRO: "+e.message+" ("+String(e.filename).split("/").pop()+":"+e.lineno+")";});</script>
+<script src="../js/esquema.js"></script>
+<script>
+const results = [];
+const check = (name, cond) => results.push((cond ? "PASS " : "FAIL ") + name);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const utc = (y, m, d) => new Date(Date.UTC(y, m - 1, d));
+const serial = (y, m, d) => Math.round((Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000);
+
+// ---- the OLD, position-based parsers: reference for "a standard sheet reads exactly as before"
+function stripCode(v) { return typeof v !== "string" ? v : v.replace(/^\s*\d+\s*-\s*/, "").trim(); }
+function oldLanc(row, linha) {
+  return { linha, data: typeof row[0] === "number" ? new Date(Math.floor(row[0] - 25569) * 86400000) : null, loja: stripCode(row[1]) || null, conta: stripCode(row[2]) || null, empresa: stripCode(row[3]) || null, categoria: stripCode(row[4]) || null, valor: typeof row[5] === "number" ? row[5] : 0, tipo: row[6] || null, peso: typeof row[7] === "number" ? row[7] : null, pessoa: stripCode(row[8]) || null, observacao: row[9] || null };
+}
+function oldEst(row, linha) {
+  return { linha, produto: row[0] || null, tipo: row[1] || null, marca: row[2] || null, condicao: row[3] || null, estado: row[4] || null, pesoGrama: typeof row[5] === "number" ? row[5] : null, pureza: typeof row[6] === "number" ? row[6] : null, valorCusto: typeof row[7] === "number" ? row[7] : null, valorVenda: typeof row[8] === "number" ? row[8] : null, dataCompra: typeof row[9] === "number" ? new Date(Math.floor(row[9] - 25569) * 86400000) : null, dataVenda: typeof row[10] === "number" ? new Date(Math.floor(row[10] - 25569) * 86400000) : null, comprador: row[11] || null, vendedor: row[12] || null, loja: row[13] || null, vendido: row[14] === true, observacao: row[15] || "" };
+}
+const semExtras = (r) => { const c = Object.assign({}, r); delete c.extras; delete c.raw; return c; };
+
+// ---- fixtures
+const HEAD_LANC = ["Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", "Peso (g)", "Pessoa", "Observação"];
+const LANC = [
+  [serial(2026, 9, 1), "1 - Ipanema", "1 - Caixa", "1 - Ipanema Joias", "3 - Venda de Joias", 1500, "Entrada", 12.5, "5 - Maria", "Anel"],
+  [serial(2026, 9, 2), "2 - Recreio", "2 - Banco", "1 - Ipanema Joias", "1 - Compra de Matéria Prima", -900, "Saída", 8, "7 - Ouro Fino", ""],
+  [serial(2026, 9, 3), "1 - Ipanema", "1 - Caixa", "1 - Ipanema Joias", "3 - Venda de Joias", 300, "Entrada"],
+];
+const HEAD_EST = ["Produto", "Tipo", "Marca", "Condição", "Estado", "Peso em grama", "Pureza (k)", "Valor de Custo", "Valor de venda", "Data de Compra", "Data de Venda", "Comprador", "Vendedor", "Loja", "Vendido?", "Observação"];
+const EST = [
+  ["1 - Anel Solitário", "2 - Anel", "1 - Vivara", "Excelente", "Venda Direta", 4.2, 18, 3200, "", serial(2026, 8, 3), "", "", "", "Ipanema", false, "Com vendedor: Ana"],
+  ["Pulseira", "3 - Pulseira", "", "Bom", "", 9.5, "", 5100, 7000, serial(2026, 7, 1), serial(2026, 9, 2), "Carlos", "Ana", "Recreio", true],
+];
+
+// ================= standard layout reads exactly as the old code did
+(function () {
+  const rows = [HEAD_LANC].concat(LANC);
+  const es = detectarEsquema(rows, "lancamentos");
+  check("standard ledger: header found on row 1", es.linhaCabecalho === 1);
+  check("standard ledger: the 10 columns are mapped in their usual positions", same(es.cols, { data: 0, loja: 1, conta: 2, empresa: 3, categoria: 4, valor: 5, tipo: 6, peso: 7, pessoa: 8, observacao: 9 }));
+  const lido = interpretarLancamentos(rows, es);
+  const antigo = LANC.map((r, i) => oldLanc(r, i + 2));
+  check("standard ledger: records equal the old parser's (incl. row numbers)", same(lido.registros.map(semExtras), antigo));
+  check("standard ledger: nothing is ignored, no extras", lido.ignoradas === 0 && lido.registros.every((r) => r.extras.length === 0));
+  check("standard ledger: learns the sheet's words and sign convention", es.rotuloEntrada === "Entrada" && es.rotuloSaida === "Saída" && es.saidaNegativa === true && es.codigoNoTexto.loja === true);
+  check("no unrecognised columns", es.extras.length === 0);
+
+  const rows2 = [HEAD_EST].concat(EST);
+  const ee = detectarEsquema(rows2, "estoque");
+  check("standard stock: the 16 columns are mapped in their usual positions", same(ee.cols, POSICOES_PADRAO.estoque) && ee.linhaCabecalho === 1);
+  const it = interpretarEstoque(rows2, ee).itens;
+  check("standard stock: items equal the old parser's", same(it.map(semExtras), EST.map((r, i) => oldEst(r, i + 2))));
+  check("standard stock: raw is padded to the sheet width (16 cells)", it.every((x) => x.raw.length === 16));
+})();
+
+// ================= reordered columns, extra columns, title rows above the header
+(function () {
+  const rows = [
+    ["Fluxo de caixa 2026 — Loja X"],
+    [],
+    ["Valor", "Descrição", "Nº NF", "Data", "Tipo", "Categoria", "Forma de pagamento"],
+    [1200, "Venda balcão", "A-15", serial(2026, 9, 4), "Entrada", "Vendas", "Pix"],
+    [-300, "Aluguel", "", serial(2026, 9, 5), "Saída", "Despesas", "Boleto"],
+    [],
+    ["Total", "", "", "", "", "", ""],
+  ];
+  const es = detectarEsquema(rows, "lancamentos");
+  check("messy ledger: header found on row 3 (below titles)", es.linhaCabecalho === 3);
+  check("messy ledger: columns mapped by name, not position", es.cols.valor === 0 && es.cols.observacao === 1 && es.cols.data === 3 && es.cols.tipo === 4 && es.cols.categoria === 5 && es.cols.conta === 6);
+  check("messy ledger: the unknown column becomes an extra", es.extras.length === 1 && es.extras[0].nome === "Nº NF" && es.extras[0].col === 2);
+  const r = interpretarLancamentos(rows, es);
+  check("messy ledger: rows read with real sheet row numbers", r.registros.length === 2 && r.registros[0].linha === 4 && r.registros[1].linha === 5);
+  check("messy ledger: values land in the right fields", r.registros[0].valor === 1200 && r.registros[0].categoria === "Vendas" && r.registros[0].observacao === "Venda balcão" && r.registros[0].conta === "Pix");
+  check("messy ledger: the extra column is shown with its title", same(r.registros[0].extras, [{ nome: "Nº NF", valor: "A-15" }]) && r.registros[1].extras.length === 0);
+  check("messy ledger: the 'Total' line is ignored (no date), blank rows skipped", r.ignoradas === 1);
+  check("messy ledger: a missing column is just null, not an error", r.registros[0].loja === null && r.registros[0].peso === null);
+})();
+
+// ================= other words, text dates and text money, positive expenses
+(function () {
+  const rows = [
+    ["Data", "Descrição", "Valor (R$)", "Natureza"],
+    ["01/09/2026", "Cliente A", "R$ 1.234,56", "Receita"],
+    ["02/09/2026", "Fornecedor B", "R$ 800,00", "Despesa"],
+    ["3 de setembro de 2026", "Estorno", "(50,00)", ""],
+    ["2026-09-04", "Cliente C", "2500", "Receita"],
+  ];
+  const es = detectarEsquema(rows, "lancamentos");
+  check("other words: 'Natureza' is the in/out column, 'Descrição' the note", es.cols.tipo === 3 && es.cols.observacao === 1 && es.cols.valor === 2 && es.cols.data === 0);
+  const r = interpretarLancamentos(rows, es).registros;
+  check("other words: dd/mm/yyyy, ISO and 'd de mês de yyyy' dates all read", same(r.map((x) => x.data.toISOString().slice(0, 10)), ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"]));
+  check("other words: Receita/Despesa become Entrada/Saída", r[0].tipo === "Entrada" && r[1].tipo === "Saída");
+  check("other words: an expense written positive is normalised to negative (app convention)", r[1].valor === -800 && r[0].valor === 1234.56);
+  check("other words: with no type, a negative amount is a Saída", r[2].tipo === "Saída" && r[2].valor === -50);
+  check("other words: the sheet's own words and positive-expense habit are learned for new rows", es.rotuloEntrada === "Receita" && es.rotuloSaida === "Despesa" && es.saidaNegativa === false);
+  check("new row follows the sheet's habits", valorParaPlanilha(es, "Saída", 100) === 100 && rotuloTipoParaPlanilha(es, "Saída") === "Despesa" && rotuloTipoParaPlanilha(es, "Entrada") === "Receita");
+})();
+
+// ================= typos, no header, few columns
+(function () {
+  const es1 = detectarEsquema([["Data", "Categora", "Valor", "Tipo"], [serial(2026, 1, 2), "Aluguel", -10, "Saída"]], "lancamentos");
+  check("a typo in a header ('Categora') is still recognised", es1.cols.categoria === 1);
+  const semCab = LANC.map((r) => r.slice());
+  const es2 = detectarEsquema(semCab, "lancamentos");
+  check("no header: falls back to the original positions and flags it as uncertain", es2.linhaCabecalho === 0 && es2.cols.valor === 5 && es2.incerto === true);
+  const r2 = interpretarLancamentos(semCab, es2).registros;
+  check("no header: every row is data and row numbers start at 1", r2.length === 3 && r2[0].linha === 1 && r2[0].valor === 1500);
+  const es3 = detectarEsquema([["Data", "Descrição", "Valor"], [serial(2026, 5, 5), "x", 10], [serial(2026, 5, 6), "y", -4]], "lancamentos");
+  const r3 = interpretarLancamentos([["Data", "Descrição", "Valor"], [serial(2026, 5, 5), "x", 10], [serial(2026, 5, 6), "y", -4]], es3).registros;
+  check("three columns only: read fine, sign gives the type", r3.length === 2 && r3[0].tipo === "Entrada" && r3[1].tipo === "Saída" && r3[0].loja === null);
+})();
+
+// ================= reading values by content when the headers say nothing
+(function () {
+  const rows = [
+    ["Quando", "Oq", "Qto", "E/S"],
+    ["01/09/2026", "a", "10", "Entrada"], ["02/09/2026", "b", "-5", "Saída"], ["03/09/2026", "c", "7", "Entrada"], ["04/09/2026", "d", "3", "Entrada"],
+  ];
+  const es = detectarEsquema(rows, "lancamentos");
+  check("odd headers: the date column is still found (by name, 'Quando')", es.cols.data === 0);
+  const rows2 = [
+    ["Registro", "Detalhe", "Montante", "Coluna X"],
+    ["01/09/2026", "a", 10, "Entrada"], ["02/09/2026", "b", -5, "Saída"], ["03/09/2026", "c", 7, "Entrada"], ["04/09/2026", "d", 3, "Entrada"],
+  ];
+  const es2 = detectarEsquema(rows2, "lancamentos");
+  check("odd headers: the type column is found by its values (Entrada/Saída)", es2.cols.tipo === 3);
+  const es3 = detectarEsquema([["Coluna 1", "Descrição", "Montante"], ["01/09/2026", "a", 10], ["02/09/2026", "b", -5], ["03/09/2026", "c", 7]], "lancamentos");
+  check("odd headers: the date column is found by its values (dd/mm/yyyy)", es3.cols.data === 0 && es3.cols.valor === 2);
+})();
+
+// ================= conversions
+(function () {
+  const n = converterNumero;
+  check("numbers: 1.234,56 / R$ 1.234,56 / 1234.56 / -12,5 / (100,00) / 12,5 g / 1.000",
+    n("1.234,56") === 1234.56 && n("R$ 1.234,56") === 1234.56 && n("1234.56") === 1234.56 && n("-12,5") === -12.5 && n("(100,00)") === -100 && n("12,5 g") === 12.5 && n("1.000") === 1000);
+  check("numbers: text and empty are not numbers", n("abc") === null && n("") === null && n(null) === null && n("12abc") === null && n("--") === null);
+  check("numbers: real numbers pass through", n(5) === 5 && n(-3.2) === -3.2 && n(NaN) === null);
+  const d = (v) => { const x = converterData(v); return x ? x.toISOString().slice(0, 10) : null; };
+  check("dates: serial, dd/mm/yyyy, dd-mm-yy, yyyy-mm-dd, textual month", d(serial(2026, 2, 28)) === "2026-02-28" && d("31/12/2025") === "2025-12-31" && d("5-3-26") === "2026-03-05" && d("2026-03-05") === "2026-03-05" && d("1 de março de 2026") === "2026-03-01");
+  check("dates: impossible or unrelated values are refused", d("31/02/2026") === null && d("hello") === null && d(5) === null && d("") === null && d(999999) === null);
+  check("types: many words for in/out", tipoCanonico("Receita") === "Entrada" && tipoCanonico("crédito") === "Entrada" && tipoCanonico("Despesa") === "Saída" && tipoCanonico("Saída") === "Saída" && tipoCanonico("SAIDA") === "Saída" && tipoCanonico("+") === "Entrada" && tipoCanonico("-") === "Saída" && tipoCanonico("Venda de joias") === null && tipoCanonico("") === null);
+  check("booleans: sim / x / true / vendido", converterBooleano("Sim") && converterBooleano("x") && converterBooleano(true) && converterBooleano("Vendido") && !converterBooleano("não") && !converterBooleano("") && !converterBooleano(false));
+  check("column letters", colunaLetra(0) === "A" && colunaLetra(25) === "Z" && colunaLetra(26) === "AA" && colunaLetra(51) === "AZ" && colunaLetra(77) === "BZ");
+  check("header scoring: exact > extra words > typo > unrelated", pontuarCabecalho("Valor", ["valor"]) === 1 && pontuarCabecalho("Valor total da venda", ["valor"]) > 0.7 && pontuarCabecalho("Valor total da venda", ["valor"]) < 1 && pontuarCabecalho("Categora", ["categoria"]) >= 0.8 && pontuarCabecalho("Contato", ["conta"]) === 0 && pontuarCabecalho("Peso (g)", ["peso"]) === 1);
+})();
+
+// ================= stock with English/other names, and the "sold" marker inferred
+(function () {
+  const rows = [
+    ["Item", "Categoria", "Qtd", "Preço de custo", "Preço", "Data de entrada", "Data de venda", "Fornecedor"],
+    ["Coleira", "Acessórios", 10, 12.5, 30, serial(2026, 8, 1), "", "Pet Center"],
+    ["Ração 10kg", "Alimento", 3, 90, 140, serial(2026, 8, 2), serial(2026, 9, 1), "Agro"],
+  ];
+  const es = detectarEsquema(rows, "estoque");
+  check("stock: 'Item', 'Qtd', 'Preço de custo', 'Preço' are understood", es.cols.produto === 0 && es.cols.tipo === 1 && es.cols.pesoGrama === 2 && es.cols.valorCusto === 3 && es.cols.valorVenda === 4 && es.cols.dataCompra === 5 && es.cols.dataVenda === 6);
+  const it = interpretarEstoque(rows, es).itens;
+  check("stock: no 'Vendido?' column -> sold is inferred from the sale date", it[0].vendido === false && it[1].vendido === true);
+  check("stock: unknown column ('Fornecedor') kept as an extra", it[0].extras.length === 1 && it[0].extras[0].nome === "Fornecedor" && it[0].extras[0].valor === "Pet Center");
+  check("stock: a text specification is kept as text", interpretarEstoque([["Produto", "Especificação"], ["Camisa", "Tamanho M"]], detectarEsquema([["Produto", "Especificação"], ["Camisa", "Tamanho M"]], "estoque")).itens[0].pureza === "Tamanho M");
+  // writing: patch only the mapped columns, keep the rest of the row untouched
+  const linha = it[1].raw.slice();
+  const ausentes = preencherLinha(linha, es, { valorVenda: 150, comprador: "Zé", vendido: true });
+  check("writing: fields without a column are reported, not invented", same(ausentes, ["comprador", "vendido"]) && linha[4] === 150 && linha.length === 8 && linha[7] === "Agro");
+})();
+
+// ================= writing rows with the sheet's own layout
+(function () {
+  const rows = [["Valor", "Descrição", "Nº NF", "Data", "Tipo"], [10, "x", "", serial(2026, 9, 4), "Entrada"]];
+  const es = detectarEsquema(rows, "lancamentos");
+  const nova = novaLinhaVazia(es);
+  preencherLinha(nova, es, { data: serial(2026, 9, 9), valor: valorParaPlanilha(es, "Saída", 42), tipo: rotuloTipoParaPlanilha(es, "Saída"), observacao: "Teste" });
+  preencherExtras(nova, es, [{ col: 2, valor: "NF-7" }]);
+  check("new row: every value goes to its own column, the extra too", same(nova, [-42, "Teste", "NF-7", serial(2026, 9, 9), "Saída"]));
+  check("new row: width equals the sheet's width", nova.length === es.largura);
+})();
+
+// ================= tabs: which one is the ledger / the stock
+(function () {
+  const ledger = [["Data", "Descrição", "Valor", "Tipo"], [serial(2026, 1, 1), "x", 10, "Entrada"], [serial(2026, 1, 2), "y", -3, "Saída"]];
+  const stock = [["Produto", "Marca", "Quantidade", "Valor de custo"], ["A", "M", 1, 2], ["B", "N", 3, 4]];
+  const other = [["Nome", "Telefone"], ["Ana", "9999"], ["Beto", "8888"]];
+  check("tab 'Movimentações' with ledger columns is the ledger", classificarAba("Movimentações", ledger).papel === "lancamentos");
+  check("tab 'Produtos' with stock columns is the stock", classificarAba("Produtos", stock).papel === "estoque");
+  check("a tab of names and phones is neither", classificarAba("Contatos", other).papel === "outra");
+  check("a stock tab is not mistaken for the ledger (and vice versa)", classificarAba("Planilha1", stock).papel === "estoque" && classificarAba("Planilha1", ledger).papel === "lancamentos");
+})();
+
+// ================= support lists
+(function () {
+  const padrao = [["Código", "Nome", "Complemento", "Status"], [1, "Ipanema", "1 - Ipanema", "Ativo"], [2, "Recreio", "2 - Recreio", "Inativo"], ["", "", "", ""]];
+  const l = interpretarLista(padrao);
+  check("list (standard layout): items, complement and status read; blank row skipped", l.length === 2 && l[0].complemento === "1 - Ipanema" && l[0].ativo === true && l[1].ativo === false && l[0].temStatus === true);
+  const soNomes = interpretarLista([["Loja Centro"], ["Loja Norte"], ["Loja Sul"]]);
+  check("list (only names, no header): the names are read", soNomes.length === 3 && soNomes[0].nome === "Loja Centro" && soNomes[0].complemento === null);
+  const cabNomes = interpretarLista([["Nome"], ["Ana"], ["Beto"]]);
+  check("list (header 'Nome')", cabNomes.length === 2 && cabNomes[0].nome === "Ana");
+  const semCab = interpretarLista([[1, "Loja A", "1 - Loja A"], [2, "Loja B", "2 - Loja B"]]);
+  check("list (numbers first, no header): code, name, complement", semCab.length === 2 && semCab[1].codigo === 2 && semCab[1].nome === "Loja B" && semCab[1].complemento === "2 - Loja B");
+  check("list value follows the sheet's habit", valorDeItemLista(l[0], false) === "1 - Ipanema" && valorDeItemLista({ codigo: 3, nome: "X", complemento: null }, true) === "3 - X" && valorDeItemLista({ codigo: 3, nome: "X", complemento: null }, false) === "X");
+  check("no list tab: options are learned from the values already typed", same(valoresDistintos([["h"], ["b"], ["a"], ["B"], [""], ["c"]], 0, 1), ["a", "b", "c"]));
+  check("an empty tab gives an empty list", interpretarLista([]).length === 0 && interpretarLista([[]]).length === 0);
+})();
+
+// ================= robustness
+(function () {
+  check("empty tab: no header, nothing read, no crash", detectarEsquema([], "lancamentos").linhaCabecalho === 0 && interpretarLancamentos([], detectarEsquema([], "lancamentos")).registros.length === 0);
+  const weird = [[null, undefined, 5, {}, []], ["x"], [true, false]];
+  let ok = true;
+  try { const e = detectarEsquema(weird, "lancamentos"); interpretarLancamentos(weird, e); const e2 = detectarEsquema(weird, "estoque"); interpretarEstoque(weird, e2); interpretarLista(weird); } catch (err) { ok = false; }
+  check("odd cells (null, objects, booleans) never crash the reader", ok);
+  const evil = [["Data", "Valor", "Observação"], [serial(2026, 1, 1), 5, "=IMPORTXML(\"http://x\")"], [serial(2026, 1, 2), "<script>alert(1)<\/script>", "<b>x</b>"]];
+  const r = interpretarLancamentos(evil, detectarEsquema(evil, "lancamentos")).registros;
+  check("hostile text stays plain text (the UI writes it with textContent)", r[0].observacao === "=IMPORTXML(\"http://x\")" && r[1].valor === 0 && r[1].observacao === "<b>x</b>");
+  // performance: a big ledger
+  const big = [HEAD_LANC];
+  for (let i = 0; i < 20000; i += 1) big.push([serial(2026, 1 + (i % 12), 1 + (i % 27)), "1 - Ipanema", "1 - Caixa", "1 - Empresa", "3 - Vendas", i % 2 ? 100 : -100, i % 2 ? "Entrada" : "Saída", null, "5 - Ana", "obs"]);
+  const t0 = performance.now();
+  const es = detectarEsquema(big, "lancamentos");
+  const lido = interpretarLancamentos(big, es);
+  const ms = performance.now() - t0;
+  check("20,000 rows are analysed and read in under 1.5 s (" + Math.round(ms) + " ms)", lido.registros.length === 20000 && ms < 1500);
+  // header far below the limit is not mistaken for a header
+  const longe = []; for (let i = 0; i < 30; i += 1) longe.push(["texto " + i]); longe.push(HEAD_LANC);
+  check("a header buried below row 15 is not searched (falls back to positions)", detectarEsquema(longe, "lancamentos").linhaCabecalho === 0);
+})();
+
+const falhas = results.filter((r) => r.indexOf("FAIL") === 0);
+document.getElementById("out").textContent = results.join("\n") + "\n\nTOTAL " + results.length + "  FAILED " + falhas.length;
+</script></body></html>

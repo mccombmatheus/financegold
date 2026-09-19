@@ -20,19 +20,22 @@ function makeDeps(state) {
       setStatus: (linha, status, nota) => { const r = state.__requests.filter((x) => x.linha === linha)[0]; if (r) { r.status = status; r.nota = nota; } },
     },
     mail: { send: (m) => { if (state.__mailFail) throw new Error("mail down"); state.__mail.push(m); } },
-    registry: { list: () => state.__registry.slice(), add: (e) => { state.__registry.push({ spreadsheetId: e.spreadsheetId, empresa: e.empresa, sheetName: "Lançamento" }); } },
+    registry: { list: () => state.__registry.slice(), add: (e) => { state.__registry.push({ spreadsheetId: e.spreadsheetId, empresa: e.empresa, sheetName: "Lançamento", segmento: e.segmento }); } },
     sheets: {
       getTitles: (id) => Object.keys(state[id]),
       getValues: (id, range) => { const tab = range.split("!")[0].replace(/^'|'$/g, ""); if (!state[id] || !state[id][tab]) throw new Error("Unable to parse range: " + range); return state[id][tab].slice(1); },
       updateValues: (id, range, values) => {
         state[id].__log = (state[id].__log || []).concat([[range, values]]);
+        const mc = /^Configuração!A(\d+):[BC]\d+$/.exec(range);
+        if (mc) { state[id]["Configuração"] = state[id]["Configuração"] || [["Papel", "Aba"]]; state[id]["Configuração"][Number(mc[1]) - 1] = values[0]; }
         const m = /^Usuários!A(\d+):C\d+$/.exec(range);
         if (m) { state[id]["Usuários"] = state[id]["Usuários"] || [["Email", "Nome", "Perfil"]]; state[id]["Usuários"][Number(m[1]) - 1] = values[0]; }
       },
-      createCompanySpreadsheet: (title, nome) => {
+      createCompanySpreadsheet: (title, nome, segmento) => {
         const id = "NEW" + (++state.__created);
         state[id] = {};
-        COMPANY_TEMPLATE.forEach((t) => { state[id][t.name] = [t.headers].concat(t.seeds(nome)); });
+        state.__titles = (state.__titles || {}); state.__titles[id] = title;
+        companyTemplate_(segmento).forEach((t) => { state[id][t.name] = [t.headers].concat(t.seeds(nome)); });
         return id;
       },
       addTab: (id, title) => { state[id][title] = [["Email","Nome","Perfil"]]; },
@@ -108,7 +111,8 @@ run("mas adds a user", "mas", u({ action: "updateValues", range: "Usuários!A9:C
 run("mas changes a role", "mas", u({ action: "updateValues", range: "Usuários!C2:C2", values: row(["Editor"]) }), "ok");
 run("mas writes ledger", "mas", u({ action: "updateValues", range: "Lançamento!A5:J5", values: row(["x"]) }), "ok");
 run("mas still can't touch a tab outside the allowlist", "mas", u({ action: "updateValues", range: "Segredos!A1:A1", values: row(["x"]) }), 403);
-run("mas can't read outside allowlist", "mas", u({ action: "getValues", range: "Segredos!A1:A5" }), 403);
+run("edi can't read outside allowlist", "edi", u({ action: "getValues", range: "Segredos!A1:A5" }), 403);
+run("viz can't read outside allowlist", "viz", u({ action: "getValues", range: "Segredos!A1:A5" }), 403);
 run("mas can't use another spreadsheet", "mas", { action: "getValues", spreadsheetId: CAR, range: "Estoque!A2:P" }, 403);
 
 // --- Bootstrap (Carolina has no Usuários tab)
@@ -142,7 +146,7 @@ run("huge range string refused", "mas", u({ action: "getValues", range: "Estoque
 run("multi-row write refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P6", values: [["a"], ["b"]] }), 400);
 run("object cell refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row([{ f: "=1" }]) }), 400);
 run("overlong cell refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(["x".repeat(3000)]) }), 400);
-run("too many columns refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(new Array(30).fill("a")) }), 400);
+run("too many columns refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(new Array(61).fill("a")) }), 400);
 run("values not an array refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: "abc" }), 400);
 
 // --- writes reach the sheet API exactly as sent (RAW, single row), and Usuários cache is invalidated
@@ -186,6 +190,27 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   results.push((usr[2] && usr[2][0] === ADMIN_EMAIL && usr[2][2] === "Master" ? "PASS" : "FAIL") + " the system admin is also added as Master for support");
   results.push((state.NEW1.Categoria.length > 1 && state.NEW1["Lançamento"][0][0] === "Data" ? "PASS" : "FAIL") + " the new company gets tabs, headers and seed lists");
 
+  // segments
+  results.push((state.__registry[0].segmento === SEGMENTO_PADRAO && state.__titles.NEW1 === "Empresa Nova — " + SEGMENTOS[SEGMENTO_PADRAO].marca ? "PASS" : "FAIL") + " a company created without a segment gets the default segment (old clients keep working)");
+  const joia = step("admin", { action: "createCompany", nome: "Joias Teste", ownerEmail: "j@x.com", ownerNome: "J", segmento: "joalheria" });
+  results.push((joia.ok && state[joia.data.spreadsheetId]["Lançamento"][0][7] === "Peso (g)" && state[joia.data.spreadsheetId].Estoque[0][5] === "Peso em grama" && state[joia.data.spreadsheetId].Estoque[0][6] === "Pureza (k)" && state.__titles[joia.data.spreadsheetId] === "Joias Teste — " + SEGMENTOS.joalheria.marca ? "PASS" : "FAIL") + " a Joalheria company keeps the gold columns and the FinanGold title");
+  const pet = step("admin", { action: "createCompany", nome: "Pet Feliz", ownerEmail: "pet@x.com", ownerNome: "Pet", segmento: "petshop" });
+  results.push((pet.ok && pet.data.segmento === "petshop" && state.__registry.filter((e) => e.spreadsheetId === pet.data.spreadsheetId)[0].segmento === "petshop" && state.__titles[pet.data.spreadsheetId] === "Pet Feliz — FinanPet" ? "PASS" : "FAIL") + " a Petshop company is recorded with its segment and brand");
+  const petSheet = state[pet.data.spreadsheetId];
+  results.push((petSheet["Lançamento"][0][7] === "Quantidade" && petSheet.Estoque[0][5] === "Quantidade" && petSheet.Estoque[0][6] === "Especificação" && !JSON.stringify(petSheet).match(/Peso|Pureza|ouro|prata/i) ? "PASS" : "FAIL") + " a non-jewelry company has NO gold words in its headers (same column positions)");
+  results.push((petSheet["Lançamento"][0].length === 10 && petSheet.Estoque[0].length === 16 ? "PASS" : "FAIL") + " the column count is the same for every segment");
+  TOKENS.pet = "pet@x.com";
+  const mePet = step("pet", { action: "me" });
+  results.push((mePet.ok && mePet.data.companies[0].segmento === "petshop" ? "PASS" : "FAIL") + " me returns the segment of each company");
+  const meAdm2 = step("admin", { action: "me" });
+  results.push((meAdm2.data.companies.some((c) => c.spreadsheetId === IPA && c.segmento === (GATEWAY_CONFIG.SPREADSHEETS[IPA].segmento || SEGMENTO_PADRAO)) ? "PASS" : "FAIL") + " fixed companies report their segment (or the default)");
+  const list = step("admin", { action: "listCompanies" });
+  results.push((list.ok && list.data.empresas.some((e) => e.empresa === "Pet Feliz" && e.segmento === "petshop") ? "PASS" : "FAIL") + " listCompanies shows each company's segment");
+  ["hacker", 5, {}, ["petshop"], "__proto__", "toString"].forEach((bad) => {
+    const r = step("admin", { action: "createCompany", nome: "Ruim " + String(Math.random()), ownerEmail: "b@x.com", ownerNome: "B", segmento: bad });
+    results.push((!r.ok && r.status === 400 ? "PASS" : "FAIL") + " invalid segment " + JSON.stringify(bad) + " is refused");
+  });
+
   TOKENS.dono = "dono@nova.com"; TOKENS.dono2 = "dono2@nova.com";
   const meDono = step("dono", { action: "me" });
   results.push((meDono.ok && meDono.data.companies.length === 1 && meDono.data.companies[0].empresa === "Empresa Nova" && meDono.data.companies[0].perfil === "Master" && meDono.data.superAdmin === false ? "PASS" : "FAIL") + " the new owner signs in, sees ONLY the new company, as Master, and is not a super admin");
@@ -215,9 +240,104 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   const dup = step("admin", { action: "createCompany", nome: "empresa nova", ownerEmail: "x@x.com", ownerNome: "X" });
   results.push((!dup.ok && dup.status === 400 ? "PASS" : "FAIL") + " a second company with the same name is refused");
   const noSelf = step("admin", { action: "createCompany", nome: "Terceira", ownerEmail: "t@x.com", ownerNome: "T" });
-  results.push((noSelf.ok && state.NEW2["Usuários"].length === 2 ? "PASS" : "FAIL") + " incluirMeuAcesso=false leaves the admin out of the new company");
+  results.push((noSelf.ok && state[noSelf.data.spreadsheetId]["Usuários"].length === 2 ? "PASS" : "FAIL") + " incluirMeuAcesso=false leaves the admin out of the new company");
 })();
 
+
+
+// --- adaptive spreadsheets: the Configuração tab decides which extra tabs the app may use
+(function () {
+  const state = freshState();
+  state[IPA]["Movimentações"] = [["Data", "Valor"], [45000, 10]];
+  state[IPA]["Produtos"] = [["Produto"], ["A"]];
+  state[IPA]["Filiais"] = [["Nome"], ["Centro"]];
+  state[IPA]["Segredos"] = [["senha"], ["123"]];
+  const step = (who, body) => { const d = makeDeps(state); try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), d) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
+  const rd = (who, tab, id) => step(who, { action: "getValues", spreadsheetId: id || IPA, range: "'" + tab + "'!A1:BZ" });
+  const wr = (who, range, row, id) => step(who, { action: "updateValues", spreadsheetId: id || IPA, range: range, values: [row] });
+  const ok = (r) => r.ok === true;
+  const no = (r, code) => r.ok === false && r.status === (code || 403);
+  const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+
+  T(ok(rd("mas", "Movimentações")) && ok(rd("mas", "Segredos")), "a Master may read ANY tab (needed to connect a sheet with other tab names)");
+  T(no(rd("edi", "Movimentações")) && no(rd("viz", "Movimentações")) && no(rd("edi", "Segredos")), "Editors and Viewers can NOT read a tab that is not configured");
+  state[IPA]["Configuração"] = [["Papel", "Aba"]];
+  T(ok(rd("viz", "Configuração")) && ok(rd("edi", "Configuração")) && no(rd("nobody", "Configuração")), "every member reads Configuração (the app needs it); strangers do not");
+  T(no(rd("nobody", "Movimentações")), "a stranger reads nothing");
+
+  // writing the configuration
+  T(no(wr("edi", "Configuração!A1:B1", ["Papel", "Aba"])) && no(wr("viz", "Configuração!A2:B2", ["lancamentos", "Movimentações"])) && no(wr("nobody", "Configuração!A2:B2", ["lancamentos", "Movimentações"])), "only the Master writes the Configuração tab");
+  T(ok(wr("mas", "Configuração!A1:B1", ["Papel", "Aba"])), "the Master writes the header");
+  T(no(wr("mas", "Configuração!A1:B1", ["Papel", "Outra"])), "…but only the exact header");
+  T(no(wr("mas", "Configuração!A2:B2", ["admin", "Segredos"])) && no(wr("mas", "Configuração!A2:B2", ["lista:hack", "Segredos"])), "unknown roles are refused");
+  T(no(wr("mas", "Configuração!A2:B2", ["lancamentos", "Usuários"])) && no(wr("mas", "Configuração!A2:B2", ["estoque", "Configuração"])), "Usuários and Configuração can never be named as a role tab");
+  T(no(wr("mas", "Configuração!A2:B2", ["lancamentos", "x".repeat(101)])) && no(wr("mas", "Configuração!A2:B2", ["lancamentos", ""])) && no(wr("mas", "Configuração!A2:B2", [5, 6])), "empty / too long / non-text tab names are refused");
+  T(no(wr("mas", "Configuração!A300:B300", ["lancamentos", "Movimentações"])) && no(wr("mas", "Configuração!A1:B5", ["lancamentos", "Movimentações"])), "rows beyond the limit and multi-row ranges are refused");
+  T(ok(wr("mas", "Configuração!A2:B2", ["lancamentos", "Movimentações"])) && ok(wr("mas", "Configuração!A3:B3", ["estoque", "Produtos"])) && ok(wr("mas", "Configuração!A4:B4", ["lista:lojas", "Filiais"])), "the Master connects the ledger, the stock and a list");
+
+  // effect of the configuration
+  T(ok(rd("viz", "Movimentações")) && ok(rd("viz", "Produtos")) && ok(rd("viz", "Filiais")), "once connected, Viewers read the connected tabs");
+  T(no(rd("viz", "Segredos")) && no(rd("edi", "Segredos")), "…and still nothing else");
+  T(ok(wr("edi", "Movimentações!A3:B3", [45001, 5])) && ok(wr("edi", "Produtos!A3:A3", ["B"])), "Editors write the connected ledger and stock");
+  T(no(wr("viz", "Movimentações!A4:B4", [1, 2])) && no(wr("nobody", "Movimentações!A4:B4", [1, 2])), "Viewers and strangers do not");
+  T(no(wr("edi", "Filiais!A3:A3", ["Nova"])) && ok(wr("mas", "Filiais!A3:A3", ["Nova"])), "a connected list is edited by the Master only");
+  T(no(wr("edi", "Segredos!A3:A3", ["x"])) && no(wr("mas", "Segredos!A3:A3", ["x"])), "an unconfigured tab cannot be written by anyone, even the Master");
+  T(no(rd("mas", "Movimentações", CAR)) && no(rd("mas", "Segredos", CAR)), "the configuration of one company never opens another company");
+  const outraEmpresa = step("mas", { action: "getValues", spreadsheetId: CAR, range: "Movimentações!A1:B2" });
+  T(no(outraEmpresa), "a Master of company A cannot use their own tab names on company B");
+
+  // a hostile Configuração typed straight into the sheet (someone with sheet access) grants nothing sensitive
+  const hostil = freshState();
+  hostil[IPA]["Configuração"] = [["Papel", "Aba"], ["lancamentos", "Usuários"], ["estoque", "Configuração"], ["lista:lojas", "Usuários"]];
+  const stepH = (who, body) => { const d = makeDeps(hostil); try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), d) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
+  T(no(stepH("viz", { action: "getValues", spreadsheetId: IPA, range: "Usuários!A2:C" })) && no(stepH("edi", { action: "updateValues", spreadsheetId: IPA, range: "Usuários!A9:C9", values: [["x@x.com", "X", "Master"]] })), "a Configuração naming Usuários does not open the user list to anyone");
+  T(no(stepH("edi", { action: "updateValues", spreadsheetId: IPA, range: "Configuração!A5:B5", values: [["lancamentos", "Segredos"]] })), "…and an Editor still cannot write Configuração");
+
+  // long rows
+  const wide = []; for (let i = 0; i < 60; i += 1) wide.push(i);
+  T(ok(wr("edi", "Movimentações!A9:BH9", wide)) && no(wr("edi", "Movimentações!A9:BI9", wide.concat([1])), 400), "rows up to 60 cells are accepted (wide sheets), 61 are refused");
+  // tabs
+  T(ok(step("mas", { action: "addTab", spreadsheetId: IPA, title: "Configuração" })) && no(step("edi", { action: "addTab", spreadsheetId: IPA, title: "Configuração" })) && no(step("mas", { action: "addTab", spreadsheetId: IPA, title: "Segredos" })), "only the Master may create Configuração; no other tab can be created");
+})();
+
+
+// --- security: object-prototype keys, odd types, tab-name disclosure
+(function () {
+  const state = freshState();
+  state[IPA]["Segredos"] = [["x"]];
+  const step = (who, body) => { const d = makeDeps(state); try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), d) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
+  const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+  ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf", "prototype"].forEach((id) => {
+    ["getValues", "updateValues", "getTitles", "addTab"].forEach((action) => {
+      const r = step("admin", { action: action, spreadsheetId: id, range: "Usuários!A2:C", values: [["a@b.c", "A", "Master"]], title: "Usuários" });
+      T(!r.ok && r.status === 403, "spreadsheetId '" + id + "' is refused for " + action + " (even for the system admin)");
+    });
+  });
+  [null, 5, {}, [], true, ["a"]].forEach((id) => {
+    const r = step("mas", { action: "getValues", spreadsheetId: id, range: "Estoque!A1:B2" });
+    T(!r.ok && r.status === 403, "non-string spreadsheetId " + JSON.stringify(id) + " is refused");
+  });
+  T(!step("mas", { action: undefined, spreadsheetId: IPA }).ok && !step("mas", { action: {}, spreadsheetId: IPA }).ok && !step("mas", { action: "__proto__", spreadsheetId: IPA }).ok, "unknown or odd actions are refused");
+  T(!step("mas", { action: "getValues", spreadsheetId: IPA, range: { a: 1 } }).ok && !step("mas", { action: "getValues", spreadsheetId: IPA, range: "Estoque!A1:B2'; DROP" }).ok && !step("mas", { action: "getValues", spreadsheetId: IPA, range: "Estoque!A1:B2\n" }).ok, "malformed ranges are refused");
+  T(!step("mas", { action: "getValues", spreadsheetId: IPA, range: "'Estoque'!A1:B2!C3" }).ok && !step("mas", { action: "getValues", spreadsheetId: IPA, range: "Estoque!A1:ZZZZ99999999" }).ok, "chained or absurd ranges are refused");
+  const g = (o) => step("mas", { action: "getValues", spreadsheetId: IPA, range: "Estoque!A1:B2", valueRenderOption: o });
+  T(g("FORMULA").ok && true, "an unsupported render option is ignored (never passed through)");
+  // titles: who sees which tab names
+  const tMas = step("mas", { action: "getTitles", spreadsheetId: IPA });
+  const tViz = step("viz", { action: "getTitles", spreadsheetId: IPA });
+  T(tMas.ok && tMas.data.titles.indexOf("Segredos") !== -1, "the Master sees every tab name");
+  T(tViz.ok && tViz.data.titles.indexOf("Segredos") === -1 && tViz.data.titles.indexOf("Estoque") !== -1 && tViz.data.titles.indexOf("Usuários") === -1, "a Viewer only sees the names of tabs the app may use (not 'Segredos', not 'Usuários')");
+  T(!step("nobody", { action: "getTitles", spreadsheetId: IPA }).ok, "a stranger sees no tab names");
+  // token and identity
+  T(!step("", { action: "me" }).ok && !step(undefined, { action: "me" }).ok && !step("x".repeat(5000), { action: "me" }).ok, "empty, missing and oversized tokens are refused");
+  const bogus = (() => { try { return handleRequest({ token: {}, action: "me" }, makeDeps(state)); } catch (e) { return e; } })();
+  T(bogus instanceof GatewayError_ && bogus.status === 401, "a non-string token is a 401");
+  T((() => { try { handleRequest(null, makeDeps(state)); return false; } catch (e) { return e.status === 400; } })() && (() => { try { handleRequest("x", makeDeps(state)); return false; } catch (e) { return e.status === 400; } })(), "a body that is not an object is a 400");
+  // cells: only plain scalars, length-limited
+  const bad = (v) => step("edi", { action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:A9", values: [[v]] });
+  T(!bad({ a: 1 }).ok && !bad([1]).ok && !bad(undefined).ok && !bad("x".repeat(2001)).ok && bad("=IMPORTXML(\"http://x\")").ok, "cell values: objects/arrays/oversized are refused; a formula-looking string is accepted only as literal text (RAW)");
+  T(!step("edi", { action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:A9", values: [["a"], ["b"]] }).ok && !step("edi", { action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:A9", values: "a" }).ok, "only ONE row per write");
+})();
 
 // --- access requests (anyone signed in with Google may ask; only the admin sees/answers)
 (function () {
@@ -232,7 +352,7 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   results.push((r1.ok && r1.data.duplicate === false && state.__requests.length === 1 ? "PASS" : "FAIL") + " a stranger can ask for access");
   results.push((state.__requests[0].status === "Pendente" && state.__requests[0].email === "novato@gmail.com" ? "PASS" : "FAIL") + " the request is stored as Pendente with the verified e-mail (not one typed by the user)");
   const mail = state.__mail[0];
-  results.push((mail && mail.to.split(",").indexOf(ADMIN_EMAIL) !== -1 && /Ana Souza/.test(mail.subject) && /Padaria Ana/.test(mail.body) ? "PASS" : "FAIL") + " the administrator is e-mailed with the details");
+  results.push((mail && mail.to.toLowerCase().split(",").indexOf(ADMIN_EMAIL) !== -1 && /Ana Souza/.test(mail.subject) && /Padaria Ana/.test(mail.body) ? "PASS" : "FAIL") + " the administrator is e-mailed with the details");
   const r2 = call("stranger", good);
   results.push((!r2.ok && r2.status === 429 ? "PASS" : "FAIL") + " sending again right away is rate-limited");
   deps.cache.remove("reqcool_novato@gmail.com");

@@ -40,6 +40,36 @@ function resetLancamentoForm() {
   setDefaultFormDate();
 }
 
+// Inputs for the sheet's own extra columns (the ones the app has no field for),
+// so a new row can fill them too. Text only, written as typed.
+function montarCamposExtras(gridId, extras) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return;
+  grid.innerHTML = "";
+  (extras || []).slice(0, 8).forEach((extra) => {
+    const wrap = document.createElement("div");
+    wrap.className = "form-field";
+    const label = document.createElement("label");
+    label.textContent = `${extra.nome} — opcional`;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.maxLength = 500;
+    input.dataset.col = String(extra.col);
+    wrap.appendChild(label);
+    wrap.appendChild(input);
+    grid.appendChild(wrap);
+  });
+  grid.hidden = grid.children.length === 0;
+}
+
+function lerCamposExtras(gridId) {
+  const grid = document.getElementById(gridId);
+  if (!grid) return [];
+  return Array.from(grid.querySelectorAll("input"))
+    .map((input) => ({ col: Number(input.dataset.col), valor: input.value.trim() }))
+    .filter((e) => e.valor !== "");
+}
+
 function readFormValues() {
   return {
     data: document.getElementById("field-data").value,
@@ -52,6 +82,7 @@ function readFormValues() {
     pessoa: document.getElementById("field-pessoa").value,
     peso: document.getElementById("field-peso").value,
     observacao: document.getElementById("field-observacao").value,
+    extras: lerCamposExtras("lancamento-extras-grid"),
   };
 }
 
@@ -64,23 +95,25 @@ function validateFormValues(values) {
 }
 
 async function submitLancamentoValues(values, token) {
-  const valorFinal = values.tipo === "Saída" ? -Math.abs(values.valor) : Math.abs(values.valor);
-  const row = [
-    dateInputToSheetSerial(values.data),
-    values.loja,
-    values.conta,
-    values.empresa,
-    values.categoria,
-    valorFinal,
-    values.tipo,
-    values.peso ? Number(values.peso) : "",
-    values.pessoa,
-    values.observacao || "",
-  ];
+  const esquema = await garantirEsquema("lancamentos", token);
+  if (esquema.cols.data === undefined || esquema.cols.valor === undefined) {
+    throw new Error("Não encontrei as colunas de Data e Valor na planilha.");
+  }
+  const { porColuna } = colunasParaEscrever(esquema, {
+    data: dateInputToSheetSerial(values.data),
+    loja: values.loja,
+    conta: values.conta,
+    empresa: values.empresa,
+    categoria: values.categoria,
+    valor: valorParaPlanilha(esquema, values.tipo, values.valor),
+    tipo: rotuloTipoParaPlanilha(esquema, values.tipo),
+    peso: values.peso ? Number(values.peso) : "",
+    pessoa: values.pessoa,
+    observacao: values.observacao || "",
+  }, values.extras);
 
   const targetRow = await findNextLancamentoRow(token);
-  const range = `${CONFIG.SHEET_NAME}!A${targetRow}:J${targetRow}`;
-  await updateSheetRow(CONFIG.SPREADSHEET_ID, range, row, token);
+  await escreverColunas("lancamentos", targetRow, porColuna, esquema.cols.data, token);
   return targetRow;
 }
 

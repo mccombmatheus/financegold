@@ -92,7 +92,14 @@ function showCompanyPicker(companies, token, email) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "company-picker-btn";
-    btn.textContent = tenant.empresa;
+    const nome = document.createElement("span");
+    nome.textContent = tenant.empresa;
+    btn.appendChild(nome);
+    const seg = getSegmento(tenant.segmento);
+    const legenda = document.createElement("small");
+    legenda.className = "company-picker-seg";
+    legenda.textContent = `${seg.nome} · ${seg.marca}`;
+    btn.appendChild(legenda);
     btn.addEventListener("click", () => resolveProfileAndEnter(tenant, token, email));
     list.appendChild(btn);
   });
@@ -150,6 +157,7 @@ async function resolveProfileAndEnter(tenant, token, email) {
   CONFIG.SPREADSHEET_ID = tenant.spreadsheetId;
   if (tenant.sheetName) CONFIG.SHEET_NAME = tenant.sheetName;
   setActiveCompanyLabel(tenant.empresa);
+  aplicarSegmento(tenant.segmento);
   rememberCompany(tenant.spreadsheetId);
 
   try {
@@ -316,7 +324,10 @@ function loadRememberedCompany() {
   }
 }
 
+// Called only on an explicit sign-out (never on an expired session, which keeps
+// the place and the offline data so the person resumes after signing in again).
 function forgetSessionPlace() {
+  clearCachedBusinessData();
   try {
     sessionStorage.removeItem(REMEMBERED_COMPANY_KEY);
     sessionStorage.removeItem(LAST_VIEW_KEY);
@@ -359,6 +370,7 @@ async function enterOfflineFromLastSession(token) {
   CONFIG.SPREADSHEET_ID = last.spreadsheetId;
   CONFIG.SHEET_NAME = last.sheetName;
   setActiveCompanyLabel(last.empresa);
+  aplicarSegmento(last.segmento);
   await startApp(token, last.nome, last.perfil, last.linha);
 }
 
@@ -370,6 +382,7 @@ async function startApp(token, nome, perfil, linha) {
     email: currentEmail,
     spreadsheetId: CONFIG.SPREADSHEET_ID,
     sheetName: CONFIG.SHEET_NAME,
+    segmento: segmentoAtual,
     empresa: sidebarEmpresa.textContent,
     nome,
     perfil,
@@ -389,10 +402,19 @@ async function startApp(token, nome, perfil, linha) {
   // Creating companies and editing the lists need the gateway (direct mode has
   // no registry); the company's Master edits lists, only system admins create companies.
   const gatewayMode = Boolean(CONFIG.GATEWAY_URL);
-  document.getElementById("ajustes-listas-section").hidden = !(gatewayMode && isMaster(perfil));
+  document.getElementById("ajustes-listas-section").hidden = true; // shown after Configuração is read (standard list tabs only)
   document.getElementById("ajustes-sistema-card").hidden = !(gatewayMode && currentIsSuperAdmin);
 
   statusMessage.textContent = "Carregando dados...";
+
+  // Which tab plays which role for this company (Configuração), before any data is read.
+  resetarAbasDaEmpresa();
+  try {
+    await carregarConfiguracaoAbas(token);
+  } catch (err) {
+    if (err.sessionExpired) return;
+    console.error(err);
+  }
 
   const [lancResult, lookupsResult, estoqueResult] = await Promise.allSettled([
     fetchWithOfflineFallback(() => fetchLancamentos(token), "lancamentos", serializeLancamentos, deserializeLancamentos),
@@ -431,7 +453,19 @@ async function startApp(token, nome, perfil, linha) {
     errors.push(`Estoque: ${estoqueResult.reason.message}`);
   }
 
-  if (gatewayMode && isMaster(perfil)) initListasAdmin();
+  // Inputs for the sheet's own extra columns, from the layouts just detected.
+  const esqLanc = obterEsquema("lancamentos");
+  const esqEst = obterEsquema("estoque");
+  montarCamposExtras("lancamento-extras-grid", esqLanc ? esqLanc.extras : []);
+  montarCamposExtras("estoque-extras-grid", esqEst ? esqEst.extras : []);
+
+  if (gatewayMode && isMaster(perfil)) {
+    // Editing the lists from here assumes the standard list tabs; a company whose lists were connected from other tabs edits them in its spreadsheet.
+    const listasPadrao = !temListasConectadas();
+    document.getElementById("ajustes-listas-section").hidden = !listasPadrao;
+    if (listasPadrao) initListasAdmin();
+  }
+  if (isMaster(perfil)) initConectar();
 
   if (isMaster(perfil)) {
     try {
@@ -453,7 +487,10 @@ async function startApp(token, nome, perfil, linha) {
     // Offline is deliberately silent: just keep showing the cached data.
     statusMessage.textContent = "";
   } else {
-    statusMessage.textContent = `${lancResult.value.data.length} lançamentos e ${estoqueResult.value.data.length} peças carregados.`;
+    const ignoradas = ultimoResumoLeitura.lancamentos + ultimoResumoLeitura.estoque;
+    statusMessage.textContent =
+      `${lancResult.value.data.length} lançamentos e ${estoqueResult.value.data.length} ${vocab("carregados")}.` +
+      (ignoradas > 0 ? ` ${ignoradas} linha(s) da planilha não puderam ser lidas (sem data ou sem produto) e foram ignoradas.` : "");
   }
 }
 
@@ -467,6 +504,7 @@ function companiesFromMe(me) {
     empresa: c.empresa,
     spreadsheetId: c.spreadsheetId,
     sheetName: c.sheetName,
+    segmento: segmentoValido(c.segmento),
   }));
 }
 

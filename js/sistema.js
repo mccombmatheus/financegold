@@ -55,7 +55,8 @@ function renderEmpresasSistema() {
     const meta = document.createElement("div");
     meta.className = "pedido-meta";
     const masters = empresa.masters.map((m) => m.email).join(", ") || "sem administrador";
-    meta.textContent = `${empresa.origem === "fixa" ? "cadastrada no servidor" : "criada pelo app"} · ${empresa.usuarios} pessoa(s) · Master: ${masters}`;
+    const seg = getSegmento(empresa.segmento);
+    meta.textContent = `${seg.nome} (${seg.marca}) · ${empresa.origem === "fixa" ? "cadastrada no servidor" : "criada pelo app"} · ${empresa.usuarios} pessoa(s) · Master: ${masters}`;
     li.appendChild(meta);
     list.appendChild(li);
   });
@@ -67,6 +68,15 @@ function setupSistema() {
   if (sistemaReady) return;
   sistemaReady = true;
 
+  const segmentoSelect = document.getElementById("empresa-add-segmento");
+  Object.keys(SEGMENTOS).forEach((id) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = `${SEGMENTOS[id].nome} — ${SEGMENTOS[id].marca}`;
+    segmentoSelect.appendChild(option);
+  });
+  segmentoSelect.value = "outro";
+
   const form = document.getElementById("empresa-add-form");
   const statusEl = document.getElementById("empresa-add-status");
   const submitButton = document.getElementById("btn-empresa-add");
@@ -77,6 +87,7 @@ function setupSistema() {
     const ownerEmail = document.getElementById("empresa-add-email").value.trim();
     const ownerNome = document.getElementById("empresa-add-dono").value.trim();
     const incluirMeuAcesso = document.getElementById("empresa-add-meu-acesso").checked;
+    const segmento = segmentoSelect.value;
 
     if (!nome || !ownerEmail || !ownerNome) {
       statusEl.textContent = "Preencha o nome da empresa, o e-mail e o nome do administrador.";
@@ -90,8 +101,9 @@ function setupSistema() {
     submitButton.disabled = true;
     statusEl.textContent = "Criando a empresa... isso leva alguns segundos.";
     try {
-      await gatewayCall("createCompany", { nome, ownerEmail, ownerNome, incluirMeuAcesso }, accessToken);
+      await gatewayCall("createCompany", { nome, ownerEmail, ownerNome, incluirMeuAcesso, segmento }, accessToken);
       form.reset();
+      segmentoSelect.value = "outro";
       let aviso = "";
       if (pedidoEmAtendimento) {
         try {

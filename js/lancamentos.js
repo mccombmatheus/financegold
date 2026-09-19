@@ -23,52 +23,21 @@ function toNumber(value) {
   return typeof value === "number" ? value : 0;
 }
 
-// Columns (A..J): Data, Loja, Conta, Empresa, Categoria, Valor, Tipo, Peso (g), Pessoa, Observação
-function parseLancamentoRow(row, linha) {
-  return {
-    linha,
-    data: sheetSerialToDate(row[0]),
-    loja: stripCode(row[1]) || null,
-    conta: stripCode(row[2]) || null,
-    empresa: stripCode(row[3]) || null,
-    categoria: stripCode(row[4]) || null,
-    valor: toNumber(row[5]),
-    tipo: row[6] || null,
-    peso: typeof row[7] === "number" ? row[7] : null,
-    pessoa: stripCode(row[8]) || null,
-    observacao: row[9] || null,
-  };
-}
-
-// Scans column A (Data) to find the real last row with data, ignoring both
-// mid-sheet gaps and the large formatted-but-empty tail the sheet has past
-// its actual last entry, then returns the row number right after it.
-async function findNextLancamentoRow(token) {
-  const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, `${CONFIG.SHEET_NAME}!A2:A`, token, {
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-
-  let lastDataOffset = -1;
-  rows.forEach((row, index) => {
-    if (row[0] !== undefined && row[0] !== null && row[0] !== "") {
-      lastDataOffset = index;
-    }
-  });
-
-  const headerRow = 1;
-  const lastDataRow = lastDataOffset === -1 ? headerRow : 2 + lastDataOffset;
-  return lastDataRow + 1;
-}
+// The ledger is read by header name, not by fixed column position (see
+// js/esquema.js): columns may come in any order, with extras, other words, dates
+// as text. `ultimoResumoLeitura` says how many lines could not be read.
+let ultimoResumoLeitura = { lancamentos: 0, estoque: 0 };
 
 async function fetchLancamentos(token) {
-  const range = `${CONFIG.SHEET_NAME}!A2:J`;
-  const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, range, token, {
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  const records = [];
-  rows.forEach((row, index) => {
-    if (row[0] === undefined || row[0] === null || row[0] === "") return;
-    records.push(parseLancamentoRow(row, index + 2));
-  });
-  return records;
+  const rows = await lerLinhasDaAba("lancamentos", token);
+  const esquema = detectarEsquema(rows, "lancamentos");
+  guardarEsquema("lancamentos", esquema);
+  const { registros, ignoradas } = interpretarLancamentos(rows, esquema);
+  ultimoResumoLeitura.lancamentos = ignoradas;
+  return registros;
+}
+
+// Next empty row below the data (never values:append — see the note in CLAUDE.md).
+async function findNextLancamentoRow(token) {
+  return acharProximaLinha("lancamentos", "data", token);
 }

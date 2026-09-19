@@ -334,6 +334,60 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+.company-picker-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.leitura-bloco h3 {
+  margin: 0.75rem 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+#conectar-table td,
+#conectar-table th {
+  white-space: normal;
+  vertical-align: top;
+}
+
+#conectar-table select {
+  width: 100%;
+  min-width: 11rem;
+}
+
+#conectar-table td:nth-child(3) {
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.company-picker-seg {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.sidebar-segmento {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.sidebar-segmento:empty {
+  display: none;
+}
+
 #cadastro-form {
   display: flex;
   flex-direction: column;
@@ -2101,6 +2155,17 @@ td select {
     text-align: right;
     color: var(--color-subtle);
     font-size: 0.76rem;
+  }
+
+  .lanc-col-extra {
+    grid-column: 1 / -1;
+    color: var(--color-subtle);
+    font-size: 0.76rem;
+  }
+
+  .lanc-col-extra::before {
+    content: attr(data-nome) ": ";
+    color: var(--color-muted);
   }
 
   .lanc-col-observacao {

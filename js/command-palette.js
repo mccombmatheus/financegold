@@ -3,9 +3,13 @@ const COMMANDS = [
   { view: "lancamento-lista", label: "Consultar lançamentos", group: "Fluxo de Caixa" },
   { view: "lancamento-form", label: "Novo lançamento", group: "Fluxo de Caixa" },
   { view: "estoque-lista", label: "Consultar estoque", group: "Estoque" },
-  { view: "estoque-form", label: "Nova peça", group: "Estoque" },
+  { view: "estoque-form", labelKey: "novoItem", label: "Novo item", group: "Estoque" },
   { view: "ajustes", label: "Ajustes", group: "Navegação" },
 ];
+
+function commandLabel(cmd) {
+  return cmd.labelKey ? vocab(cmd.labelKey) : cmd.label;
+}
 
 let paletteSelectedIndex = 0;
 let paletteFiltered = [];
@@ -22,7 +26,7 @@ function isCommandAvailable(cmd) {
 function renderCommandResults(query) {
   const normalized = query.trim().toLowerCase();
   paletteFiltered = COMMANDS.filter(isCommandAvailable).filter(
-    (cmd) => !normalized || cmd.label.toLowerCase().includes(normalized) || cmd.group.toLowerCase().includes(normalized)
+    (cmd) => !normalized || commandLabel(cmd).toLowerCase().includes(normalized) || cmd.group.toLowerCase().includes(normalized)
   );
   paletteSelectedIndex = 0;
 
@@ -42,7 +46,7 @@ function renderCommandResults(query) {
     item.className = `command-palette-item${index === paletteSelectedIndex ? " active" : ""}`;
 
     const label = document.createElement("span");
-    label.textContent = cmd.label;
+    label.textContent = commandLabel(cmd);
 
     const group = document.createElement("span");
     group.className = "command-palette-group";

@@ -1,5 +1,5 @@
 /**
- * FinanGold gateway — a Google Apps Script web app that sits between the app
+ * Finan. gateway — a Google Apps Script web app that sits between the app
  * (browser) and the spreadsheets.
  *
  * Why it exists: without it, every person using the app needs the company's
@@ -25,8 +25,8 @@ const GATEWAY_CONFIG = {
 
   // The ONLY spreadsheets this gateway will ever touch.
   SPREADSHEETS: {
-    "1nZsFn7K2PpMq36jmBr6hjqHZU8gqHzjPUEzG0rFmmUQ": { empresa: "Ipanema Joias", sheetName: "Lançamento" },
-    "1DdJs0mLYiJuMctNVc-xN1rZgs3OEXOgZI5JJjfeU2AA": { empresa: "Carolina Joias", sheetName: "Lançamento" },
+    "1nZsFn7K2PpMq36jmBr6hjqHZU8gqHzjPUEzG0rFmmUQ": { empresa: "Ipanema Joias", sheetName: "Lançamento", segmento: "joalheria" },
+    "1DdJs0mLYiJuMctNVc-xN1rZgs3OEXOgZI5JJjfeU2AA": { empresa: "Carolina Joias", sheetName: "Lançamento", segmento: "joalheria" },
   },
 
   // May set up a company whose Usuários tab is missing or empty (becoming its
@@ -42,7 +42,7 @@ const GATEWAY_CONFIG = {
 
 // Shown by the public banner (a GET on the /exec URL) so it is easy to confirm
 // which version of this file is really deployed.
-const GATEWAY_VERSION = "2026-09-19-painel-do-sistema";
+const GATEWAY_VERSION = "2026-09-20-planilhas-adaptaveis";
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
@@ -52,7 +52,7 @@ const REQUEST_HEADERS = ["Data", "E-mail", "Nome", "Empresa", "Tipo", "Mensagem"
 const MAX_PENDING_REQUESTS = 300;
 const REQUEST_TYPES = ["nova", "existente"];
 const REGISTRY_PROP = "REGISTRY_SPREADSHEET_ID";
-const REGISTRY_TITLE = "FinanGold — Registro de empresas";
+const REGISTRY_TITLE = "Finan. — Registro de empresas";
 
 // Structure of every company created from inside the app. A new company starts
 // with just enough seed rows in the lists for the forms to be usable; its Master
@@ -63,19 +63,44 @@ function seedRow_(n, nome, extra) {
   if (extra) row.push(extra);
   return row;
 }
-const COMPANY_TEMPLATE = [
-  { name: "Lançamento", dateCols: [0], headers: ["Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", "Peso (g)", "Pessoa", "Observação"], seeds: () => [] },
-  { name: "Estoque", dateCols: [9, 10], headers: ["Produto", "Tipo", "Marca", "Condição", "Estado", "Peso em grama", "Pureza (k)", "Valor de Custo", "Valor de venda", "Data de Compra", "Data de Venda", "Comprador", "Vendedor", "Loja", "Vendido?", "Observação"], seeds: () => [] },
-  { name: "Lojas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Loja principal")] },
-  { name: "Contas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Caixa"), seedRow_(2, "Banco")] },
-  { name: "Empresas", headers: LOOKUP_HEADERS, seeds: (empresa) => [seedRow_(1, empresa)] },
-  { name: "Categoria", headers: LOOKUP_HEADERS.concat(["Status"]), seeds: () => ["Vendas", "Compras", "Despesas fixas", "Salários", "Impostos", "Outros"].map((n, i) => seedRow_(i + 1, n, "Ativo")) },
-  { name: "Pessoa", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Geral")] },
-  { name: "Produto", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Produto geral")] },
-  { name: "Tipo de Produto", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Geral")] },
-  { name: "Marcas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Sem marca")] },
-  { name: "Usuários", headers: ["Email", "Nome", "Perfil"], seeds: () => [] },
-];
+// Business segments. "id" is what travels between the app and this script; the
+// brand is only used in titles of the spreadsheets created here. Keep the ids in
+// sync with SEGMENTOS in js/segmentos.js.
+const SEGMENTO_PADRAO = "joalheria";
+const SEGMENTOS = {
+  joalheria: { marca: "FinanGold", qtd: "Peso (g)", qtdEstoque: "Peso em grama", esp: "Pureza (k)" },
+  petshop: { marca: "FinanPet" },
+  comercio: { marca: "FinanShop" },
+  servicos: { marca: "FinanServ" },
+  alimentacao: { marca: "FinanFood" },
+  saude: { marca: "FinanCare" },
+  outro: { marca: "Finan." },
+};
+function segmentoValido_(id) {
+  return typeof id === "string" && Object.prototype.hasOwnProperty.call(SEGMENTOS, id) ? id : SEGMENTO_PADRAO;
+}
+
+// The columns stay the same for every segment (so the app reads them the same
+// way); only the header WORDS that name gold-specific things change.
+function companyTemplate_(segmento) {
+  const seg = SEGMENTOS[segmentoValido_(segmento)];
+  const qtd = seg.qtd || "Quantidade";
+  const qtdEstoque = seg.qtdEstoque || "Quantidade";
+  const esp = seg.esp || "Especificação";
+  return [
+    { name: "Lançamento", dateCols: [0], headers: ["Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", qtd, "Pessoa", "Observação"], seeds: () => [] },
+    { name: "Estoque", dateCols: [9, 10], headers: ["Produto", "Tipo", "Marca", "Condição", "Estado", qtdEstoque, esp, "Valor de Custo", "Valor de venda", "Data de Compra", "Data de Venda", "Comprador", "Vendedor", "Loja", "Vendido?", "Observação"], seeds: () => [] },
+    { name: "Lojas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Loja principal")] },
+    { name: "Contas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Caixa"), seedRow_(2, "Banco")] },
+    { name: "Empresas", headers: LOOKUP_HEADERS, seeds: (empresa) => [seedRow_(1, empresa)] },
+    { name: "Categoria", headers: LOOKUP_HEADERS.concat(["Status"]), seeds: () => ["Vendas", "Compras", "Despesas fixas", "Salários", "Impostos", "Outros"].map((n, i) => seedRow_(i + 1, n, "Ativo")) },
+    { name: "Pessoa", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Geral")] },
+    { name: "Produto", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Produto geral")] },
+    { name: "Tipo de Produto", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Geral")] },
+    { name: "Marcas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Sem marca")] },
+    { name: "Usuários", headers: ["Email", "Nome", "Perfil"], seeds: () => [] },
+  ];
+}
 const READ_TABS = ["Estoque", "Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
 const WRITE_TABS = ["Estoque"]; // plus the company's own ledger tab (sheetName)
 const ROLE_VISUALIZADOR = "Visualizador";
@@ -84,8 +109,18 @@ const ROLE_MASTER = "Master";
 const VALID_ROLES = [ROLE_VISUALIZADOR, ROLE_EDITOR, ROLE_MASTER];
 const MAX_BODY_CHARS = 200000;
 const MAX_CELL_CHARS = 2000;
-const MAX_ROW_CELLS = 20;
+const MAX_ROW_CELLS = 60;
 const USUARIOS_CACHE_SECONDS = 20;
+
+// "Configuração" tab: which tabs of the company's spreadsheet play which role,
+// for companies whose tabs are not named like the defaults. Rows: Papel, Aba,
+// where Papel is "lancamentos", "estoque" or "lista:<chave>". Everyone in the
+// company may read it; only the Master writes it. It only ever ADDS tabs the
+// app may use — Usuários and Configuração themselves can never be named in it.
+const CONFIG_TAB = "Configuração";
+const CONFIG_ROLES = ["lancamentos", "estoque"];
+const CONFIG_LIST_KEYS = ["lojas", "contas", "empresas", "categorias", "pessoas", "produtos", "tiposProduto", "marcas"];
+const MAX_CONFIG_ROWS = 30;
 
 function GatewayError_(status, message) {
   this.status = status;
@@ -120,7 +155,7 @@ function doPost(e) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput("FinanGold gateway ativo. Versão " + GATEWAY_VERSION);
+  return ContentService.createTextOutput("Finan. gateway ativo. Versão " + GATEWAY_VERSION);
 }
 
 // Run this from the Apps Script editor (it is NOT reachable through the web
@@ -164,27 +199,28 @@ function realDeps_() {
     requests: requestsDeps_(),
     mail: {
       // Plain text only, addressed to fixed recipients or to the requester.
-      send: (msg) => MailApp.sendEmail({ to: msg.to, subject: msg.subject, body: msg.body, name: "FinanGold" }),
+      send: (msg) => MailApp.sendEmail({ to: msg.to, subject: msg.subject, body: msg.body, name: "Finan." }),
     },
     sheets: {
       // Creates the spreadsheet (owned by whoever deployed this script) with
-      // every tab, header and seed row of COMPANY_TEMPLATE. Returns its id.
-      createCompanySpreadsheet: (title, empresaNome) => {
+      // every tab, header and seed row of companyTemplate_(segmento). Returns its id.
+      createCompanySpreadsheet: (title, empresaNome, segmento) => {
+        const template = companyTemplate_(segmento);
         const created = Sheets.Spreadsheets.create({
           properties: { title: title },
-          sheets: COMPANY_TEMPLATE.map((t) => ({ properties: { title: t.name } })),
+          sheets: template.map((t) => ({ properties: { title: t.name } })),
         });
         const id = created.spreadsheetId;
         Sheets.Spreadsheets.Values.batchUpdate(
           {
             valueInputOption: "RAW",
-            data: COMPANY_TEMPLATE.map((t) => ({ range: t.name + "!A1", values: [t.headers].concat(t.seeds(empresaNome)) })),
+            data: template.map((t) => ({ range: t.name + "!A1", values: [t.headers].concat(t.seeds(empresaNome)) })),
           },
           id
         );
         const requests = [];
         created.sheets.forEach((sheet, i) => {
-          (COMPANY_TEMPLATE[i].dateCols || []).forEach((col) => {
+          (template[i].dateCols || []).forEach((col) => {
             requests.push({
               repeatCell: {
                 range: { sheetId: sheet.properties.sheetId, startRowIndex: 1, startColumnIndex: col, endColumnIndex: col + 1 },
@@ -229,10 +265,10 @@ function registryDeps_(cache) {
       const id = props.getProperty(REGISTRY_PROP);
       const out = [];
       if (id) {
-        const data = Sheets.Spreadsheets.Values.get(id, "Empresas!A2:E", { valueRenderOption: "UNFORMATTED_VALUE" });
+        const data = Sheets.Spreadsheets.Values.get(id, "Empresas!A2:F", { valueRenderOption: "UNFORMATTED_VALUE" });
         (data.values || []).forEach((row) => {
           if (row[0] && String(row[4] || "Sim") !== "Não") {
-            out.push({ spreadsheetId: String(row[0]), empresa: String(row[1] || ""), sheetName: "Lançamento" });
+            out.push({ spreadsheetId: String(row[0]), empresa: String(row[1] || ""), sheetName: "Lançamento", segmento: segmentoValido_(String(row[5] || "")) });
           }
         });
       }
@@ -244,15 +280,15 @@ function registryDeps_(cache) {
       if (!id) {
         const created = Sheets.Spreadsheets.create({ properties: { title: REGISTRY_TITLE }, sheets: [{ properties: { title: "Empresas" } }] });
         id = created.spreadsheetId;
-        Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa"]] }, id, "Empresas!A1:E1", { valueInputOption: "RAW" });
+        Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa", "Segmento"]] }, id, "Empresas!A1:F1", { valueInputOption: "RAW" });
         props.setProperty(REGISTRY_PROP, id);
       }
       const existing = Sheets.Spreadsheets.Values.get(id, "Empresas!A2:A");
       const next = (existing.values || []).length + 2;
       Sheets.Spreadsheets.Values.update(
-        { values: [[entry.spreadsheetId, entry.empresa, new Date().toISOString(), entry.criadaPor, "Sim"]] },
+        { values: [[entry.spreadsheetId, entry.empresa, new Date().toISOString(), entry.criadaPor, "Sim", segmentoValido_(entry.segmento)]] },
         id,
-        "Empresas!A" + next + ":E" + next,
+        "Empresas!A" + next + ":F" + next,
         { valueInputOption: "RAW" }
       );
       cache.remove("reg_list");
@@ -271,7 +307,7 @@ function requestsDeps_() {
     if (!id) {
       const created = Sheets.Spreadsheets.create({ properties: { title: REGISTRY_TITLE }, sheets: [{ properties: { title: "Empresas" } }] });
       id = created.spreadsheetId;
-      Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa"]] }, id, "Empresas!A1:E1", { valueInputOption: "RAW" });
+      Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa", "Segmento"]] }, id, "Empresas!A1:F1", { valueInputOption: "RAW" });
       props.setProperty(REGISTRY_PROP, id);
     }
     const titles = (Sheets.Spreadsheets.get(id, { fields: "sheets.properties.title" }).sheets || []).map((x) => x.properties.title);
@@ -371,7 +407,7 @@ function companyMap_(deps) {
   });
   const registered = deps.registry ? deps.registry.list() : [];
   registered.forEach((entry) => {
-    if (!map[entry.spreadsheetId]) map[entry.spreadsheetId] = { empresa: entry.empresa, sheetName: entry.sheetName || "Lançamento" };
+    if (!map[entry.spreadsheetId]) map[entry.spreadsheetId] = { empresa: entry.empresa, sheetName: entry.sheetName || "Lançamento", segmento: segmentoValido_(entry.segmento) };
   });
   return map;
 }
@@ -389,14 +425,17 @@ function handleRequest(body, deps) {
   if (action === "listCompanies") return actionListCompanies_(deps, email);
   if (action === "forwardRequest") return actionForwardRequest_(deps, email, body);
 
-  const spreadsheet = companyMap_(deps)[body.spreadsheetId];
+  // Own keys only: "constructor" / "__proto__" / "toString" must not pass as a company id.
+  const map = companyMap_(deps);
+  const spreadsheet =
+    typeof body.spreadsheetId === "string" && Object.prototype.hasOwnProperty.call(map, body.spreadsheetId) ? map[body.spreadsheetId] : null;
   if (!spreadsheet) throw new GatewayError_(403, "Empresa não permitida.");
   const access = getAccess_(deps, email, body.spreadsheetId);
 
   switch (action) {
     case "getTitles":
       if (!access.perfil && !access.bootstrapOk) throw denied_();
-      return { titles: deps.sheets.getTitles(body.spreadsheetId) };
+      return { titles: titlesFor_(deps, access, spreadsheet, body.spreadsheetId) };
     case "getValues":
       return actionGetValues_(deps, access, spreadsheet, body);
     case "updateValues":
@@ -406,6 +445,23 @@ function handleRequest(body, deps) {
     default:
       throw new GatewayError_(400, "Ação desconhecida.");
   }
+}
+
+// Tab names are company information too: everyone but the Master (and the
+// first-setup admin) only sees the tabs the app may use for them.
+function titlesFor_(deps, access, spreadsheet, spreadsheetId) {
+  const all = deps.sheets.getTitles(spreadsheetId);
+  if (access.perfil === ROLE_MASTER || access.bootstrapOk) return all;
+  const cfg = loadConfigTabs_(deps, spreadsheetId);
+  return all.filter(
+    (t) =>
+      READ_TABS.indexOf(t) !== -1 ||
+      t === spreadsheet.sheetName ||
+      t === CONFIG_TAB ||
+      t === cfg.lancamentos ||
+      t === cfg.estoque ||
+      cfg.listas.indexOf(t) !== -1
+  );
 }
 
 function denied_() {
@@ -449,6 +505,30 @@ function loadUsuarios_(deps, spreadsheetId) {
   return usuarios;
 }
 
+// Reads the company's Configuração tab (short cache). Always returns a usable
+// object: a missing / unreadable / hostile tab means "no configuration".
+function loadConfigTabs_(deps, spreadsheetId) {
+  const cacheKey = "cfg_" + spreadsheetId;
+  const cached = deps.cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+  const out = { lancamentos: null, estoque: null, listas: [] };
+  let rows = [];
+  try {
+    rows = deps.sheets.getValues(spreadsheetId, CONFIG_TAB + "!A2:B" + (MAX_CONFIG_ROWS + 1), "UNFORMATTED_VALUE");
+  } catch (err) {
+    rows = [];
+  }
+  rows.slice(0, MAX_CONFIG_ROWS).forEach((row) => {
+    const papel = typeof row[0] === "string" ? row[0].trim() : "";
+    const aba = typeof row[1] === "string" ? row[1].trim() : "";
+    if (!papel || !aba || aba.length > 100 || aba === USUARIOS_TAB || aba === CONFIG_TAB) return;
+    if (CONFIG_ROLES.indexOf(papel) !== -1) out[papel] = aba;
+    else if (papel.indexOf("lista:") === 0 && CONFIG_LIST_KEYS.indexOf(papel.slice(6)) !== -1) out.listas.push(aba);
+  });
+  deps.cache.put(cacheKey, JSON.stringify(out), USUARIOS_CACHE_SECONDS);
+  return out;
+}
+
 function getAccess_(deps, email, spreadsheetId) {
   const usuarios = loadUsuarios_(deps, spreadsheetId);
   const entry = usuarios ? usuarios.filter((u) => u.email === email)[0] : null;
@@ -478,12 +558,13 @@ function actionMe_(deps, email) {
         spreadsheetId: spreadsheetId,
         empresa: info.empresa,
         sheetName: info.sheetName,
+        segmento: segmentoValido_(info.segmento),
         nome: access.entry.nome,
         perfil: access.entry.perfil,
         linha: access.entry.linha,
       });
     } else if (access.bootstrapOk) {
-      bootstrap.push({ spreadsheetId: spreadsheetId, empresa: info.empresa, sheetName: info.sheetName });
+      bootstrap.push({ spreadsheetId: spreadsheetId, empresa: info.empresa, sheetName: info.sheetName, segmento: segmentoValido_(info.segmento) });
     }
   });
   const result = { companies: companies, bootstrap: bootstrap, superAdmin: isAdminEmail_(deps, email) };
@@ -506,6 +587,10 @@ function actionCreateCompany_(deps, email, body) {
   const nome = typeof body.nome === "string" ? body.nome.trim() : "";
   const ownerEmail = typeof body.ownerEmail === "string" ? body.ownerEmail.trim().toLowerCase() : "";
   const ownerNome = typeof body.ownerNome === "string" ? body.ownerNome.trim() : "";
+  if (body.segmento !== undefined && (typeof body.segmento !== "string" || !Object.prototype.hasOwnProperty.call(SEGMENTOS, body.segmento))) {
+    throw new GatewayError_(400, "Segmento inválido.");
+  }
+  const segmento = segmentoValido_(body.segmento);
   if (!nome || nome.length > 80) throw new GatewayError_(400, "Informe o nome da empresa (até 80 letras).");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail) || ownerEmail.length > 120) throw new GatewayError_(400, "Informe um e-mail válido para o administrador da empresa.");
   if (!ownerNome || ownerNome.length > 80) throw new GatewayError_(400, "Informe o nome do administrador da empresa.");
@@ -518,7 +603,7 @@ function actionCreateCompany_(deps, email, body) {
   }
 
   return deps.lock(() => {
-    const spreadsheetId = deps.sheets.createCompanySpreadsheet(nome + " — FinanGold", nome);
+    const spreadsheetId = deps.sheets.createCompanySpreadsheet(nome + " — " + SEGMENTOS[segmento].marca, nome, segmento);
     const rows = [[ownerEmail, ownerNome, ROLE_MASTER]];
     // Separation of duties: the system administrator only enters a company's
     // data if they explicitly ask for it (support). Default: not a member.
@@ -526,9 +611,9 @@ function actionCreateCompany_(deps, email, body) {
     rows.forEach((row, i) => {
       deps.sheets.updateValues(spreadsheetId, USUARIOS_TAB + "!A" + (i + 2) + ":C" + (i + 2), [row]);
     });
-    deps.registry.add({ spreadsheetId: spreadsheetId, empresa: nome, criadaPor: email });
+    deps.registry.add({ spreadsheetId: spreadsheetId, empresa: nome, criadaPor: email, segmento: segmento });
     deps.cache.remove("usr_" + spreadsheetId);
-    return { spreadsheetId: spreadsheetId, empresa: nome, sheetName: "Lançamento" };
+    return { spreadsheetId: spreadsheetId, empresa: nome, sheetName: "Lançamento", segmento: segmento };
   });
 }
 
@@ -570,13 +655,13 @@ function actionRequestAccess_(deps, email, body) {
     try {
       deps.mail.send({
         to: deps.config.ADMIN_EMAILS.join(","),
-        subject: "FinanGold: pedido de acesso de " + nome,
+        subject: "Finan.: pedido de acesso de " + nome,
         body:
-          "Novo pedido de acesso ao FinanGold.\n\n" +
+          "Novo pedido de acesso ao Finan.\n\n" +
           "Nome: " + nome + "\n" +
           "E-mail: " + email + "\n" +
           "Empresa: " + empresa + "\n" +
-          "Tipo: " + (tipo === "nova" ? "quer usar o FinanGold na própria empresa" : "trabalha em uma empresa que já usa") + "\n" +
+          "Tipo: " + (tipo === "nova" ? "quer usar o Finan. na própria empresa" : "trabalha em uma empresa que já usa") + "\n" +
           "Mensagem: " + (mensagem || "(sem mensagem)") + "\n\n" +
           "Para responder, entre em " + deps.config.APP_URL + " e abra o Painel do sistema.",
       });
@@ -616,11 +701,11 @@ function actionResolveRequest_(deps, email, body) {
       try {
         deps.mail.send({
           to: pedido.email,
-          subject: status === "Atendida" ? "FinanGold: seu acesso foi liberado" : "FinanGold: sobre o seu pedido de acesso",
+          subject: status === "Atendida" ? "Finan.: seu acesso foi liberado" : "Finan.: sobre o seu pedido de acesso",
           body:
             status === "Atendida"
-              ? "Olá, " + pedido.nome + ".\n\nSeu acesso ao FinanGold foi liberado. Entre com esta mesma conta Google (" + pedido.email + ") em " + deps.config.APP_URL + "\n"
-              : "Olá, " + pedido.nome + ".\n\nNão foi possível liberar o seu acesso ao FinanGold agora." + (nota ? "\n\n" + nota : "") + "\n",
+              ? "Olá, " + pedido.nome + ".\n\nSeu acesso ao Finan. foi liberado. Entre com esta mesma conta Google (" + pedido.email + ") em " + deps.config.APP_URL + "\n"
+              : "Olá, " + pedido.nome + ".\n\nNão foi possível liberar o seu acesso ao Finan. agora." + (nota ? "\n\n" + nota : "") + "\n",
         });
       } catch (err) {
         console.error(err);
@@ -649,6 +734,7 @@ function actionListCompanies_(deps, email) {
     out.push({
       spreadsheetId: spreadsheetId,
       empresa: known[spreadsheetId].empresa,
+      segmento: segmentoValido_(known[spreadsheetId].segmento),
       origem: fixed[spreadsheetId] ? "fixa" : "criada",
       usuarios: list.length,
       masters: list.filter((u) => u.perfil === ROLE_MASTER).map((u) => ({ nome: u.nome, email: u.email })),
@@ -678,16 +764,16 @@ function actionForwardRequest_(deps, email, body) {
     try {
       deps.mail.send({
         to: masters.map((m) => m.email).join(","),
-        subject: "FinanGold: " + pedido.nome + " pediu acesso à " + company.empresa,
+        subject: "Finan.: " + pedido.nome + " pediu acesso à " + company.empresa,
         body:
-          pedido.nome + " (" + pedido.email + ") pediu acesso ao FinanGold como pessoa da empresa " + company.empresa + ".\n\n" +
+          pedido.nome + " (" + pedido.email + ") pediu acesso ao Finan. como pessoa da empresa " + company.empresa + ".\n\n" +
           "Mensagem: " + (pedido.mensagem || "(sem mensagem)") + "\n\n" +
           "Se você reconhece essa pessoa e quer liberar, entre em " + deps.config.APP_URL +
           " e abra Ajustes > Adicionar usuário, informando este e-mail e o perfil desejado. Se não reconhece, ignore esta mensagem.",
       });
       deps.mail.send({
         to: pedido.email,
-        subject: "FinanGold: seu pedido foi encaminhado",
+        subject: "Finan.: seu pedido foi encaminhado",
         body: "Olá, " + pedido.nome + ".\n\nSeu pedido foi encaminhado ao administrador da empresa " + company.empresa + ", que decide quem tem acesso. Quando ele cadastrar o seu e-mail, é só entrar em " + deps.config.APP_URL + " com esta conta Google.\n",
       });
     } catch (err) {
@@ -712,8 +798,17 @@ function actionGetValues_(deps, access, spreadsheet, body) {
     // The full user list is admin data (the app reads the caller's own row via "me").
     if (access.perfil !== ROLE_MASTER && !access.bootstrapOk) throw denied_();
   } else {
-    const readable = READ_TABS.indexOf(parsed.tab) !== -1 || parsed.tab === spreadsheet.sheetName;
-    if (!readable || !access.perfil) throw denied_();
+    if (!access.perfil) throw denied_();
+    const cfg = loadConfigTabs_(deps, body.spreadsheetId);
+    const readable =
+      READ_TABS.indexOf(parsed.tab) !== -1 ||
+      parsed.tab === spreadsheet.sheetName ||
+      parsed.tab === CONFIG_TAB ||
+      parsed.tab === cfg.lancamentos ||
+      parsed.tab === cfg.estoque ||
+      cfg.listas.indexOf(parsed.tab) !== -1;
+    // The Master may read ANY tab: it is how they connect a sheet whose tabs have other names.
+    if (!readable && access.perfil !== ROLE_MASTER) throw denied_();
   }
   const option = body.valueRenderOption === "UNFORMATTED_VALUE" ? "UNFORMATTED_VALUE" : null;
   return { values: deps.sheets.getValues(body.spreadsheetId, body.range, option) };
@@ -741,9 +836,16 @@ function actionUpdateValues_(deps, email, access, spreadsheet, body) {
 
   if (parsed.tab === USUARIOS_TAB) {
     if (!canWriteUsuarios_(access, email, parsed, row)) throw denied_();
+  } else if (parsed.tab === CONFIG_TAB) {
+    if (access.perfil !== ROLE_MASTER || !validConfigRow_(parsed, row)) throw denied_();
   } else {
-    const isLookup = LOOKUP_TABS.indexOf(parsed.tab) !== -1;
-    const writable = WRITE_TABS.indexOf(parsed.tab) !== -1 || parsed.tab === spreadsheet.sheetName;
+    const cfg = loadConfigTabs_(deps, body.spreadsheetId);
+    const isLookup = LOOKUP_TABS.indexOf(parsed.tab) !== -1 || cfg.listas.indexOf(parsed.tab) !== -1;
+    const writable =
+      WRITE_TABS.indexOf(parsed.tab) !== -1 ||
+      parsed.tab === spreadsheet.sheetName ||
+      parsed.tab === cfg.lancamentos ||
+      parsed.tab === cfg.estoque;
     // The support lists (lojas, contas, categorias...) are edited by the company's Master only.
     if (isLookup) {
       if (access.perfil !== ROLE_MASTER) throw denied_();
@@ -755,8 +857,26 @@ function actionUpdateValues_(deps, email, access, spreadsheet, body) {
   return deps.lock(() => {
     deps.sheets.updateValues(body.spreadsheetId, body.range, [row]);
     if (parsed.tab === USUARIOS_TAB) deps.cache.remove("usr_" + body.spreadsheetId);
+    if (parsed.tab === CONFIG_TAB) deps.cache.remove("cfg_" + body.spreadsheetId);
     return { updated: true };
   });
+}
+
+// One Configuração row: the header, or "papel, aba" with a known role and a
+// tab name that is not one of the protected tabs.
+function validConfigRow_(parsed, row) {
+  if (!/^A[0-9]{1,3}:B[0-9]{1,3}$/.test(parsed.cells) && !/^A[0-9]{1,3}:C[0-9]{1,3}$/.test(parsed.cells)) return false;
+  if (row.length < 2 || row.length > 3) return false;
+  if (parsed.cells === "A1:B1" || parsed.cells === "A1:C1") return row[0] === "Papel" && row[1] === "Aba";
+  const n = Number(/^A([0-9]+)/.exec(parsed.cells)[1]);
+  if (n < 2 || n > MAX_CONFIG_ROWS + 1) return false;
+  const papel = row[0];
+  const aba = row[1];
+  if (papel === "" && aba === "") return true; // clearing a row
+  if (typeof papel !== "string" || typeof aba !== "string") return false;
+  if (aba.trim() === "" || aba.length > 100 || aba === USUARIOS_TAB || aba === CONFIG_TAB) return false;
+  const okPapel = CONFIG_ROLES.indexOf(papel) !== -1 || (papel.indexOf("lista:") === 0 && CONFIG_LIST_KEYS.indexOf(papel.slice(6)) !== -1);
+  return okPapel;
 }
 
 // Usuários writes: a Master may write anywhere on the tab; the very first
@@ -785,11 +905,15 @@ function canWriteUsuarios_(access, email, parsed, row) {
 }
 
 function actionAddTab_(deps, access, body) {
-  if (body.title !== USUARIOS_TAB) throw denied_();
-  if (access.perfil !== ROLE_MASTER && !access.bootstrapOk) throw denied_();
+  if (body.title !== USUARIOS_TAB && body.title !== CONFIG_TAB) throw denied_();
+  if (body.title === CONFIG_TAB) {
+    if (access.perfil !== ROLE_MASTER) throw denied_();
+  } else if (access.perfil !== ROLE_MASTER && !access.bootstrapOk) {
+    throw denied_();
+  }
   return deps.lock(() => {
-    deps.sheets.addTab(body.spreadsheetId, USUARIOS_TAB);
-    deps.cache.remove("usr_" + body.spreadsheetId);
+    deps.sheets.addTab(body.spreadsheetId, body.title);
+    deps.cache.remove(body.title === USUARIOS_TAB ? "usr_" + body.spreadsheetId : "cfg_" + body.spreadsheetId);
     return { created: true };
   });
 }

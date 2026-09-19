@@ -76,6 +76,7 @@ function filterEstoqueItems(items, filters) {
     if (filters.status && computeEstoqueStatus(item) !== filters.status) return false;
     if (filters.busca) {
       const haystack = [item.produto, item.tipo, item.marca, item.observacao, item.comprador]
+        .concat((item.extras || []).map((e) => String(e.valor)))
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -98,7 +99,7 @@ function exportEstoqueCsv() {
   const filtered = filterEstoqueItems(applyEstoqueOrder(allEstoque), filters);
 
   const headers = [
-    "#", "Produto", "Tipo", "Marca", "Condição", "Estado", "Peso (g)", "Pureza (k)",
+    "#", "Produto", "Tipo", "Marca", "Condição", "Estado", vocab("qtdRotulo"), vocab("espRotulo"),
     "Valor de Custo", "Valor de Venda", "Data de Compra", "Data de Venda",
     "Comprador", "Vendedor", "Loja", "Status", "Observação",
   ];
@@ -138,7 +139,7 @@ function renderEstoqueList() {
   if (filtered.length === 0) {
     const empty = document.createElement("p");
     empty.className = "chart-empty";
-    empty.textContent = "Nenhuma peça encontrada.";
+    empty.textContent = vocab("nenhumItem");
     container.appendChild(empty);
     return;
   }
@@ -181,11 +182,19 @@ function buildEstoqueCard(item) {
   meta.className = "estoque-meta";
   const metaParts = [];
   if (item.loja) metaParts.push(item.loja);
-  if (item.pesoGrama != null) metaParts.push(formatGrams(item.pesoGrama));
+  if (item.pesoGrama != null) metaParts.push(formatQuantidade(item.pesoGrama));
   if (item.valorCusto != null) metaParts.push(`Custo ${formatBRL(item.valorCusto)}`);
   if (item.vendido && item.valorVenda != null) metaParts.push(`Venda ${formatBRL(item.valorVenda)}`);
   meta.textContent = metaParts.join(" · ");
   info.appendChild(meta);
+
+  const extrasTexto = (item.extras || []).map((e) => `${e.nome}: ${e.valor}`).join(" · ");
+  if (extrasTexto) {
+    const extrasEl = document.createElement("div");
+    extrasEl.className = "estoque-meta";
+    extrasEl.textContent = extrasTexto;
+    info.appendChild(extrasEl);
+  }
 
   if (item.observacao) {
     const obs = document.createElement("div");
@@ -266,7 +275,7 @@ function showCustodyPanel(host, item) {
 }
 
 async function handleReturnToStore(host, item) {
-  if (!confirm("Confirmar retorno desta peça à loja?")) return;
+  if (!confirm(vocab("confirmarRetorno"))) return;
   try {
     await returnEstoqueToStore(item, accessToken);
     await refreshEstoque();
@@ -421,13 +430,16 @@ function setupEstoqueForm() {
       condicao: document.getElementById("estoque-field-condicao").value,
       estado: document.getElementById("estoque-field-estado").value,
       pesoGrama: Number(document.getElementById("estoque-field-peso").value),
-      pureza: document.getElementById("estoque-field-pureza").value
-        ? Number(document.getElementById("estoque-field-pureza").value)
+      pureza: document.getElementById("estoque-field-pureza").value.trim()
+        ? vocab("espNumerica")
+          ? Number(document.getElementById("estoque-field-pureza").value)
+          : document.getElementById("estoque-field-pureza").value.trim()
         : "",
       valorCusto: Number(document.getElementById("estoque-field-custo").value),
       dataCompra: document.getElementById("estoque-field-data-compra").value,
       loja: document.getElementById("estoque-field-loja").value,
       observacao: document.getElementById("estoque-field-observacao").value,
+      extras: lerCamposExtras("estoque-extras-grid"),
     };
 
     if (!values.produto || !values.tipo || !values.marca || !values.loja || !values.dataCompra) {
@@ -435,7 +447,7 @@ function setupEstoqueForm() {
       return;
     }
     if (!values.pesoGrama || values.pesoGrama <= 0 || !values.valorCusto || values.valorCusto <= 0) {
-      formStatus.textContent = "Informe peso e valor de custo maiores que zero.";
+      formStatus.textContent = `Informe ${vocab("qtdMinuscula")} e valor de custo maiores que zero.`;
       return;
     }
 
@@ -443,13 +455,13 @@ function setupEstoqueForm() {
     formStatus.textContent = "Salvando...";
     try {
       const targetRow = await createEstoqueItem(values, accessToken);
-      formStatus.textContent = `Peça salva na linha ${targetRow}.`;
+      formStatus.textContent = `${vocab("itemSalvo")} ${targetRow}.`;
       resetEstoqueForm();
       await refreshEstoque();
     } catch (err) {
       if (isNetworkError(err)) {
         enqueueWrite("estoque-novo", values);
-        formStatus.textContent = "Sem internet — a peça foi guardada e será enviada automaticamente quando a conexão voltar.";
+        formStatus.textContent = "Sem internet — o registro foi guardado e será enviado automaticamente quando a conexão voltar.";
         resetEstoqueForm();
       } else {
         console.error(err);

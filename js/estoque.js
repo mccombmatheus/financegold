@@ -1,56 +1,3 @@
-// Columns (A..P): Produto, Tipo, Marca, Condição, Estado, Peso em grama, Pureza (k),
-// Valor de Custo, Valor de venda, Data de Compra, Data de Venda, Comprador, Vendedor,
-// Loja, Vendido?, Observação
-function parseEstoqueRow(row, linha) {
-  return {
-    linha,
-    produto: row[0] || null,
-    tipo: row[1] || null,
-    marca: row[2] || null,
-    condicao: row[3] || null,
-    estado: row[4] || null,
-    pesoGrama: typeof row[5] === "number" ? row[5] : null,
-    pureza: typeof row[6] === "number" ? row[6] : null,
-    valorCusto: typeof row[7] === "number" ? row[7] : null,
-    valorVenda: typeof row[8] === "number" ? row[8] : null,
-    dataCompra: sheetSerialToDate(row[9]),
-    dataVenda: sheetSerialToDate(row[10]),
-    comprador: row[11] || null,
-    vendedor: row[12] || null,
-    loja: row[13] || null,
-    vendido: row[14] === true,
-    observacao: row[15] || "",
-    raw: row.slice(0, 16),
-  };
-}
-
-async function fetchEstoque(token) {
-  const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, "Estoque!A2:P", token, {
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  const items = [];
-  rows.forEach((row, index) => {
-    if (row[0] === undefined || row[0] === null || row[0] === "") return;
-    items.push(parseEstoqueRow(row, index + 2));
-  });
-  return items;
-}
-
-// Same reasoning as findNextLancamentoRow: values:append's table-detection
-// heuristic is unreliable on this workbook, so we compute the target row
-// ourselves and write directly to it.
-async function findNextEstoqueRow(token) {
-  const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, "Estoque!A2:A", token, {
-    valueRenderOption: "UNFORMATTED_VALUE",
-  });
-  let lastDataOffset = -1;
-  rows.forEach((row, index) => {
-    if (row[0] !== undefined && row[0] !== null && row[0] !== "") lastDataOffset = index;
-  });
-  const lastDataRow = lastDataOffset === -1 ? 1 : 2 + lastDataOffset;
-  return lastDataRow + 1;
-}
-
 // Notes are appended to Observação separated by " / ", never overwriting what's there.
 function appendObservacao(existing, note) {
   const trimmed = (existing || "").trim();
@@ -73,54 +20,79 @@ function computeEstoqueStatus(item) {
   return "em-estoque";
 }
 
-async function writeEstoqueRow(item, patchedRaw, token) {
-  const range = `Estoque!A${item.linha}:P${item.linha}`;
-  await updateSheetRow(CONFIG.SPREADSHEET_ID, range, patchedRaw, token);
+
+// Stock tab, read by header name (see js/esquema.js). Each item carries .linha
+// (its sheet row) and .raw (the whole row, padded to the sheet's width): writes
+// start from a copy of .raw and patch only the columns found, so a partial
+// update can never blank an unrelated column — whatever the layout.
+async function fetchEstoque(token) {
+  const rows = await lerLinhasDaAba("estoque", token);
+  const esquema = detectarEsquema(rows, "estoque");
+  guardarEsquema("estoque", esquema);
+  const { itens, ignoradas } = interpretarEstoque(rows, esquema);
+  ultimoResumoLeitura.estoque = ignoradas;
+  return itens;
+}
+
+// Same reasoning as findNextLancamentoRow: values:append's table-detection
+// heuristic is unreliable, so the target row is computed and written directly.
+async function findNextEstoqueRow(token) {
+  return acharProximaLinha("estoque", "produto", token);
+}
+
+// Changes only the given fields of an item, in the sheet's own columns; every
+// other cell of the row is left alone. Fields the sheet has no column for are
+// skipped; if NONE could be written the action fails loudly instead of
+// pretending it worked.
+async function gravarCamposEstoque(item, campos, token) {
+  const esquema = await garantirEsquema("estoque", token);
+  const { porColuna, ausentes } = colunasParaEscrever(esquema, campos, []);
+  if (Object.keys(porColuna).length === 0 || ausentes.length === Object.keys(campos).length) {
+    throw new Error("A planilha não tem as colunas necessárias para esta ação.");
+  }
+  await escreverColunas("estoque", item.linha, porColuna, esquema.cols.produto, token);
 }
 
 async function markEstoqueCustody(item, pessoaNome, token) {
-  const raw = item.raw.slice();
-  raw[15] = appendObservacao(item.observacao, `Com vendedor: ${pessoaNome}`);
-  await writeEstoqueRow(item, raw, token);
+  await gravarCamposEstoque(item, { observacao: appendObservacao(item.observacao, `Com vendedor: ${pessoaNome}`) }, token);
 }
 
 async function returnEstoqueToStore(item, token) {
-  const raw = item.raw.slice();
-  raw[15] = appendObservacao(item.observacao, "Retornou à loja");
-  await writeEstoqueRow(item, raw, token);
+  await gravarCamposEstoque(item, { observacao: appendObservacao(item.observacao, "Retornou à loja") }, token);
 }
 
 async function markEstoqueVendido(item, { comprador, vendedor, valorVenda, dataVenda }, token) {
-  const raw = item.raw.slice();
-  raw[8] = valorVenda;
-  raw[10] = dateInputToSheetSerial(dataVenda);
-  raw[11] = comprador;
-  raw[12] = vendedor || "";
-  raw[14] = true;
-  await writeEstoqueRow(item, raw, token);
+  await gravarCamposEstoque(
+    item,
+    {
+      valorVenda: valorVenda,
+      dataVenda: dateInputToSheetSerial(dataVenda),
+      comprador: comprador,
+      vendedor: vendedor || "",
+      vendido: true,
+    },
+    token
+  );
 }
 
 async function createEstoqueItem(values, token) {
+  const esquema = await garantirEsquema("estoque", token);
+  if (esquema.cols.produto === undefined) throw new Error("Não encontrei a coluna de Produto na planilha.");
+  const { porColuna } = colunasParaEscrever(esquema, {
+    produto: values.produto,
+    tipo: values.tipo,
+    marca: values.marca,
+    condicao: values.condicao || "",
+    estado: values.estado || "",
+    pesoGrama: values.pesoGrama,
+    pureza: values.pureza || "",
+    valorCusto: values.valorCusto,
+    dataCompra: dateInputToSheetSerial(values.dataCompra),
+    loja: values.loja,
+    vendido: false,
+    observacao: values.observacao || "",
+  }, values.extras);
   const targetRow = await findNextEstoqueRow(token);
-  const raw = [
-    values.produto,
-    values.tipo,
-    values.marca,
-    values.condicao || "",
-    values.estado || "",
-    values.pesoGrama,
-    values.pureza || "",
-    values.valorCusto,
-    "",
-    dateInputToSheetSerial(values.dataCompra),
-    "",
-    "",
-    "",
-    values.loja,
-    false,
-    values.observacao || "",
-  ];
-  const range = `Estoque!A${targetRow}:P${targetRow}`;
-  await updateSheetRow(CONFIG.SPREADSHEET_ID, range, raw, token);
+  await escreverColunas("estoque", targetRow, porColuna, esquema.cols.produto, token);
   return targetRow;
 }

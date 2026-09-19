@@ -211,11 +211,13 @@ function renderKpis(records, prevRecords, series) {
       spark: series ? { values: series.saldo, filled: true, tone: "accent" } : null,
     })
   );
+  const showQuantidade = vocab("kpiQuantidade") === "sempre" || kpis.pesoComprado > 0 || kpis.pesoVendido > 0;
+  if (!showQuantidade) return;
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Compras",
-      labelExtra: " de ouro (g)",
-      value: formatGrams(kpis.pesoComprado),
+      label: vocab("kpiCompra"),
+      labelExtra: vocab("kpiCompraExtra"),
+      value: formatQuantidade(kpis.pesoComprado),
       icon: KPI_ICONS.gem,
       iconClass: "neutral",
       art: "ingot",
@@ -224,9 +226,9 @@ function renderKpis(records, prevRecords, series) {
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Vendas",
-      labelExtra: " de ouro (g)",
-      value: formatGrams(kpis.pesoVendido),
+      label: vocab("kpiVenda"),
+      labelExtra: vocab("kpiVendaExtra"),
+      value: formatQuantidade(kpis.pesoVendido),
       icon: KPI_ICONS.gem,
       iconClass: "neutral",
       art: "ingot",

@@ -140,6 +140,26 @@ function loadDataCache(name) {
   }
 }
 
+// On an explicit sign-out, business data cached for offline viewing must not stay
+// on a shared computer. The queue of entries typed offline and not yet sent is
+// KEPT: dropping it would silently lose someone's work.
+function clearCachedBusinessData() {
+  try {
+    Object.keys(localStorage).forEach((key) => {
+      if (
+        key.indexOf(CACHE_KEY_PREFIX) === 0 ||
+        key.indexOf("financegold_abas_") === 0 ||
+        key.indexOf("financegold_esquema_") === 0 ||
+        key === "financegold_last_session"
+      ) {
+        localStorage.removeItem(key);
+      }
+    });
+  } catch (err) {
+    // nothing to clear / storage unavailable
+  }
+}
+
 function serializeLancamentos(records) {
   return records.map((r) => ({ ...r, data: r.data ? r.data.toISOString() : null }));
 }

@@ -3,9 +3,13 @@ const VIEW_TITLES = {
   "lancamento-lista": "Fluxo de Caixa",
   "lancamento-form": "Novo lançamento",
   "estoque-lista": "Estoque",
-  "estoque-form": "Nova peça",
   ajustes: "Ajustes",
 };
+
+function getViewTitle(view) {
+  if (view === "estoque-form") return vocab("novoItem");
+  return VIEW_TITLES[view] || "";
+}
 
 const VIEW_EYEBROWS = {
   dashboard: "// painel",
@@ -54,7 +58,7 @@ function setActiveView(view) {
     section.hidden = section.dataset.view !== view;
   });
   const topbarTitle = document.querySelector(".app-topbar h2");
-  if (topbarTitle) topbarTitle.textContent = VIEW_TITLES[view] || "";
+  if (topbarTitle) topbarTitle.textContent = getViewTitle(view);
   const topbarEyebrow = document.getElementById("topbar-eyebrow");
   if (topbarEyebrow) topbarEyebrow.textContent = VIEW_EYEBROWS[view] || "";
 

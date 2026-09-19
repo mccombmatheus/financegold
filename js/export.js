@@ -11,7 +11,8 @@ function neutralizeFormulaValue(str) {
 
 function toCsvValue(value) {
   const str = value === null || value === undefined ? "" : String(value);
-  const safe = neutralizeFormulaValue(str);
+  // A real number (e.g. -900) cannot carry a formula; only text is neutralised.
+  const safe = typeof value === "number" ? str : neutralizeFormulaValue(str);
   if (/[",\n]/.test(safe)) {
     return `"${safe.replace(/"/g, '""')}"`;
   }
