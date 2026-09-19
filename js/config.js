@@ -19,7 +19,7 @@ const CONFIG = {
   // the spreadsheet shared with their own Google account, and the login only
   // asks for their email. Left empty, the app talks to the Sheets API directly
   // with each person's own token (the original mode; needs Drive sharing).
-  GATEWAY_URL: "",
+  GATEWAY_URL: "https://script.google.com/macros/s/AKfycbxOBuNTztDP0z4MnEOwb7y9e0MBHsFtQyn9eGjWVdFK-HX3vMXZPo4Jcn58_bR7Gfo9Xg/exec",
   SCOPES: "",
 };
 
