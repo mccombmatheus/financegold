@@ -2,10 +2,10 @@
 <script src="../Code.gs"></script>
 <script>
 window.onerror=(m,src,l)=>{document.getElementById('out').textContent='ERROR: '+m+' (linha '+l+')';};
-const ADMIN_EMAIL = "mccomb.matheus@gmail.com";
+const ADMIN_EMAIL = GATEWAY_CONFIG.ADMIN_EMAILS[0].trim().toLowerCase();
 const IPA = "1nZsFn7K2PpMq36jmBr6hjqHZU8gqHzjPUEzG0rFmmUQ";
 const CAR = "1DdJs0mLYiJuMctNVc-xN1rZgs3OEXOgZI5JJjfeU2AA";
-const TOKENS = { admin: "mccomb.matheus@gmail.com", viz: "viz@x.com", edi: "edi@x.com", mas: "mas@x.com", nobody: "nobody@x.com" };
+const TOKENS = { admin: ADMIN_EMAIL, viz: "viz@x.com", edi: "edi@x.com", mas: "mas@x.com", nobody: "nobody@x.com" };
 
 function makeDeps(state) {
   const cacheStore = {};
@@ -42,7 +42,7 @@ function makeDeps(state) {
 function freshState() {
   return {
     __created: 0, __registry: [], __requests: [], __mail: [],
-    [IPA]: { Lojas: [[]], Contas: [[]], Empresas: [[]], Categoria: [[]], Pessoa: [[]], Produto: [[]], "Tipo de Produto": [[]], Marcas: [[]], "Lançamento": [[]], Estoque: [[]], Usuários: [["Email","Nome","Perfil"], ["viz@x.com","Viz","Visualizador"], ["edi@x.com","Edi","Editor"], ["mas@x.com","Mas","Master"], ["mccomb.matheus@gmail.com","Matheus","Master"]] },
+    [IPA]: { Lojas: [[]], Contas: [[]], Empresas: [[]], Categoria: [[]], Pessoa: [[]], Produto: [[]], "Tipo de Produto": [[]], Marcas: [[]], "Lançamento": [[]], Estoque: [[]], Usuários: [["Email","Nome","Perfil"], ["viz@x.com","Viz","Visualizador"], ["edi@x.com","Edi","Editor"], ["mas@x.com","Mas","Master"], [ADMIN_EMAIL,"Matheus","Master"]] },
     [CAR]: { "Lançamento": [[]], Estoque: [[]] }, // no Usuários tab yet
   };
 }
@@ -121,9 +121,9 @@ run("bootstrap: stranger cannot create tab", "nobody", { action: "addTab", sprea
 run("bootstrap: cannot create any other tab", "admin", { action: "addTab", spreadsheetId: CAR, title: "Financeiro" }, 403);
 run("bootstrap: admin writes header", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A1:C1", values: row(["Email","Nome","Perfil"]) }, "ok");
 run("bootstrap: header with junk refused", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A1:C1", values: row(["x","y","z"]) }, 403);
-run("bootstrap: admin writes own Master row", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["mccomb.matheus@gmail.com","Matheus","Master"]) }, "ok");
+run("bootstrap: admin writes own Master row", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row([ADMIN_EMAIL,"Matheus","Master"]) }, "ok");
 run("bootstrap: admin cannot enroll someone else", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["evil@x.com","Evil","Master"]) }, 403);
-run("bootstrap: admin cannot write a non-Master row", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["mccomb.matheus@gmail.com","M","Visualizador"]) }, 403);
+run("bootstrap: admin cannot write a non-Master row", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row([ADMIN_EMAIL,"M","Visualizador"]) }, 403);
 run("bootstrap: stranger cannot write a row", "nobody", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["nobody@x.com","N","Master"]) }, 403);
 run("bootstrap: admin can't write ledger before being a Master", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Lançamento!A2:J2", values: row(["x"]) }, 403);
 
@@ -131,7 +131,7 @@ run("bootstrap: admin can't write ledger before being a Master", "admin", { acti
 (function () {
   const state = freshState();
   state[CAR].Usuários = [["Email","Nome","Perfil"], ["other@x.com","Other","Master"]];
-  const r = runOn("bootstrap closed once company has users (admin write own row)", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A3:C3", values: row(["mccomb.matheus@gmail.com","M","Master"]) }, 403, state);
+  const r = runOn("bootstrap closed once company has users (admin write own row)", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A3:C3", values: row([ADMIN_EMAIL,"M","Master"]) }, 403, state);
 })();
 
 // --- input validation

@@ -34,7 +34,7 @@ const GATEWAY_CONFIG = {
   // The developer / system account comes first. The personal account stays here
   // only until the new one is confirmed working; then remove it (it would keep
   // seeing the Painel do sistema).
-  ADMIN_EMAILS: ["finanponto@gmail.com", "mccomb.matheus@gmail.com"],
+  ADMIN_EMAILS: ["finanponto@gmail.com"],
 
   // Where people are sent in the e-mails about access requests.
   APP_URL: "https://mccombmatheus.github.io/financegold/",

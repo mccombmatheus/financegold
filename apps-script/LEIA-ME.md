@@ -8,7 +8,7 @@ verificado aqui, no servidor.
 
 ## Instalar (uma vez só)
 
-Use a conta Google que é **dona das duas planilhas** (mccomb.matheus@gmail.com).
+Use a conta Google do sistema, que é **dona das planilhas** (finanponto@gmail.com).
 
 1. Abra https://script.google.com e clique em **Novo projeto**. Nome: `FinanGold Gateway`.
 2. Apague o código que vem no editor e cole o conteúdo de `Code.gs`.
