@@ -2493,3 +2493,12 @@ td select {
     font-size: 0.72rem;
   }
 }
+
+.auth-fineprint a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+
+.auth-fineprint a:hover {
+  text-decoration: underline;
+}
