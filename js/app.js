@@ -379,10 +379,11 @@ async function startApp(token, nome, perfil, linha) {
     flushQueue();
   }
 
-  if (anyFromCache) {
-    statusMessage.textContent = "Sem internet — mostrando os últimos dados carregados.";
-  } else if (errors.length > 0) {
+  if (errors.length > 0) {
     statusMessage.textContent = `Carregado com erros — ${errors.join(" | ")}`;
+  } else if (anyFromCache) {
+    // Offline is deliberately silent: just keep showing the cached data.
+    statusMessage.textContent = "";
   } else {
     statusMessage.textContent = `${lancResult.value.data.length} lançamentos e ${estoqueResult.value.data.length} peças carregados.`;
   }

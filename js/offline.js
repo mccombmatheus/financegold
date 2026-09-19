@@ -100,17 +100,18 @@ function updateOfflineBanner() {
   const pending = getQueue().length;
   const offline = !navigator.onLine;
 
-  if (!offline && pending === 0) {
+  // Being offline is deliberately silent now (the app just keeps showing the
+  // last loaded data). The banner only appears when there is entered-offline
+  // data still waiting to sync, since that is something the user must know
+  // about — otherwise a saved lançamento would seem to have vanished.
+  if (pending === 0) {
     banner.hidden = true;
     return;
   }
 
   banner.hidden = false;
   if (offline) {
-    banner.textContent =
-      pending > 0
-        ? `Sem internet — mostrando os últimos dados carregados. ${pending} pendente(s) para sincronizar quando a conexão voltar.`
-        : "Sem internet — mostrando os últimos dados carregados.";
+    banner.textContent = `${pending} pendente(s) para sincronizar quando a conexão voltar.`;
   } else {
     banner.textContent = `Sincronizando ${pending} pendente(s)...`;
   }
