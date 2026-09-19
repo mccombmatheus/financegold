@@ -1,5 +1,9 @@
 let lancamentoListaHandlersReady = false;
 
+// Thousands of rows at once make phones sluggish, so show a page at a time.
+const LANCAMENTO_LISTA_PAGE = 200;
+let lancamentoListaLimit = LANCAMENTO_LISTA_PAGE;
+
 function getLancamentoListaFilters() {
   return {
     start: parseInputDate(document.getElementById("lanc-lista-inicio").value, false),
@@ -44,12 +48,18 @@ function renderLancamentoListaTable() {
       return dataDiff !== 0 ? dataDiff : b.linha - a.linha;
     });
 
-  document.getElementById("lancamento-lista-count").textContent = `${filtered.length} lançamento(s)`;
+  const shown = Math.min(filtered.length, lancamentoListaLimit);
+  document.getElementById("lancamento-lista-count").textContent =
+    shown < filtered.length ? `${filtered.length} lançamento(s) — mostrando os ${shown} mais recentes` : `${filtered.length} lançamento(s)`;
+
+  const moreButton = document.getElementById("lancamento-lista-mais");
+  moreButton.hidden = shown >= filtered.length;
+  moreButton.textContent = `Mostrar mais (${filtered.length - shown} restantes)`;
 
   const tbody = document.querySelector("#lancamento-lista-table tbody");
   tbody.innerHTML = "";
 
-  filtered.forEach((r) => {
+  filtered.slice(0, shown).forEach((r) => {
     const tr = document.createElement("tr");
     // Column keys become classes (lanc-col-*) so the mobile stylesheet can
     // lay each row out as a compact card instead of a wide scrolling table.
@@ -76,11 +86,21 @@ function renderLancamentoListaTable() {
   });
 }
 
+// A changed filter starts back at the first page.
+function onLancamentoListaFilterChange() {
+  lancamentoListaLimit = LANCAMENTO_LISTA_PAGE;
+  renderLancamentoListaTable();
+}
+
 function setupLancamentoListaFilterHandlers() {
   ["lanc-lista-inicio", "lanc-lista-fim", "lanc-lista-loja", "lanc-lista-tipo"].forEach((id) => {
-    document.getElementById(id).addEventListener("change", renderLancamentoListaTable);
+    document.getElementById(id).addEventListener("change", onLancamentoListaFilterChange);
   });
-  document.getElementById("lanc-lista-busca").addEventListener("input", renderLancamentoListaTable);
+  document.getElementById("lanc-lista-busca").addEventListener("input", onLancamentoListaFilterChange);
+  document.getElementById("lancamento-lista-mais").addEventListener("click", () => {
+    lancamentoListaLimit += LANCAMENTO_LISTA_PAGE;
+    renderLancamentoListaTable();
+  });
   document.getElementById("lanc-lista-export-btn").addEventListener("click", exportLancamentosCsv);
 }
 
@@ -121,5 +141,6 @@ function initLancamentoLista(records) {
   const { start, end } = computePresetRange("tudo", records);
   document.getElementById("lanc-lista-inicio").value = toInputDateValue(start);
   document.getElementById("lanc-lista-fim").value = toInputDateValue(end);
+  lancamentoListaLimit = LANCAMENTO_LISTA_PAGE;
   renderLancamentoListaTable();
 }

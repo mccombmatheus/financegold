@@ -189,7 +189,7 @@ function getContainerWidth(container) {
 // Below this width the horizontal bar charts stop reserving a fixed label
 // column on the left (which left almost no room for the bar itself on a
 // phone) and instead put the name + value on a line above each full-width bar.
-const COMPACT_CHART_MAX_WIDTH = 480;
+const COMPACT_CHART_MAX_WIDTH = 560;
 
 function truncateLabel(text, maxChars) {
   const value = String(text || "");
@@ -225,7 +225,9 @@ function renderDivergingBarChart(container, items) {
   items.forEach((item, index) => {
     const rowY = topPad + index * rowHeight;
     const barY = compact ? rowY + 26 : rowY + (rowHeight - barThickness) / 2;
-    const barLen = (Math.abs(item.saldo) / maxAbs) * (halfWidth - (compact ? 4 : 12));
+    // The wide layout prints the value beside the bar's end, so keep ~70px free
+    // on that side — otherwise a long bar pushes its value label into the name.
+    const barLen = (Math.abs(item.saldo) / maxAbs) * (halfWidth - (compact ? 4 : 70));
     const positive = item.saldo >= 0;
     const barX = positive ? baselineX : baselineX - barLen;
     const color = positive ? "var(--diverging-pos)" : "var(--diverging-neg)";
@@ -236,7 +238,7 @@ function renderDivergingBarChart(container, items) {
       "text-anchor": compact ? "start" : "end",
       class: "chart-tick-label",
     });
-    label.textContent = compact ? truncateLabel(item.loja, Math.floor((width - 120) / 6.4)) : item.loja;
+    label.textContent = truncateLabel(item.loja, compact ? Math.floor((width - 120) / 6.4) : 16);
     svg.appendChild(label);
 
     const rect = svgEl("rect", {
@@ -305,7 +307,7 @@ function renderRankedBarChart(container, items) {
       "text-anchor": compact ? "start" : "end",
       class: "chart-tick-label",
     });
-    label.textContent = compact ? truncateLabel(item.categoria, Math.floor((width - 110) / 6.4)) : item.categoria;
+    label.textContent = truncateLabel(item.categoria, compact ? Math.floor((width - 110) / 6.4) : 26);
     svg.appendChild(label);
 
     const rect = svgEl("rect", {

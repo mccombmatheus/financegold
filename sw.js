@@ -1,8 +1,12 @@
-const CACHE_NAME = "financegold-shell-v15";
+const CACHE_NAME = "financegold-shell-v17";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./css/style.css",
+  "./manifest.webmanifest",
+  "./icons/icon-180.png",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
   "./js/config.js",
   "./js/tenants.js",
   "./js/auth.js",

@@ -991,6 +991,8 @@ td select {
 }
 
 .stat-tile {
+  display: flex;
+  flex-direction: column;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 14px;
@@ -1011,7 +1013,8 @@ td select {
 
 .stat-top {
   display: flex;
-  align-items: center;
+  flex: 1 1 auto;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.5rem;
 }
@@ -1063,6 +1066,7 @@ td select {
   letter-spacing: -0.01em;
   margin-top: 0.55rem;
   color: var(--color-text);
+  white-space: nowrap;
 }
 
 .stat-tile-hero .stat-value {
@@ -2109,5 +2113,54 @@ td select {
 
   .auth-panel-inner {
     max-width: none;
+  }
+}
+
+/* Desktop dashboard: the first chart row has three cards, and with two columns
+   the third (Atividade recente) sat alone with an empty slot beside it. */
+@media (min-width: 861px) and (max-width: 1239px) {
+  #atividade-recente {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1240px) {
+  .charts-grid:has(#atividade-recente) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.lista-mais {
+  display: block;
+  margin: 0.75rem auto 0;
+}
+
+/* Installed on a phone's home screen / notched screens: keep content clear of
+   the status bar, the home indicator and the rounded corners. */
+@media (max-width: 860px) {
+  .app-topbar {
+    padding-top: max(0.85rem, env(safe-area-inset-top));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  main {
+    padding-bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1rem));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .sidebar,
+  .sidebar.collapsed {
+    padding-top: max(1.375rem, env(safe-area-inset-top));
+    padding-bottom: max(1.375rem, env(safe-area-inset-bottom));
+  }
+
+  .lista-mais {
+    width: 100%;
+  }
+
+  .auth-brand {
+    padding-top: max(2rem, calc(env(safe-area-inset-top) + 1rem));
   }
 }

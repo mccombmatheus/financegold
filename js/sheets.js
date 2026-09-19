@@ -15,6 +15,14 @@ async function gatewayCall(action, params, token) {
   } catch (err) {
     throw new Error("Resposta inválida do servidor do app. Tente novamente em instantes.");
   }
+  if (payload && payload.ok !== true && payload.status === 401) {
+    // Google access tokens last ~1 hour. Send the person back to the login
+    // screen with a clear message instead of leaving a stray error on screen.
+    const expired = new Error(payload.error || "Sessão expirada. Entre novamente.");
+    expired.sessionExpired = true;
+    if (typeof handleSessionExpired === "function") handleSessionExpired();
+    throw expired;
+  }
   if (!payload || payload.ok !== true) {
     throw new Error((payload && payload.error) || "Erro no servidor do app.");
   }

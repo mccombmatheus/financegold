@@ -56,6 +56,19 @@ function showLogin() {
   setActiveCompanyLabel("");
 }
 
+let sessionExpiredHandled = false;
+
+// Called by gatewayCall (js/sheets.js) when the server says the Google token
+// is no longer valid. The remembered company/screen are kept on purpose, so
+// signing in again lands the person back where they were.
+function handleSessionExpired() {
+  if (sessionExpiredHandled) return;
+  sessionExpiredHandled = true;
+  clearTokenSession();
+  showLogin();
+  loginStatus.textContent = "Sua sessão expirou. Entre novamente para continuar de onde parou.";
+}
+
 function showCompanyPicker(companies, token, email) {
   const list = document.getElementById("company-picker-list");
   list.innerHTML = "";
@@ -454,6 +467,7 @@ async function resolveCompaniesForEmail(email, token) {
 // "Verificando conta..." with no way to reach the cached data underneath,
 // defeating the entire point of the offline cache.
 async function handleSignedIn(token) {
+  sessionExpiredHandled = false;
   loginStatus.textContent = "Verificando conta...";
 
   let grantedScopes;
@@ -490,6 +504,7 @@ async function handleSignedIn(token) {
     companies = await resolveCompaniesForEmail(email, token);
   } catch (err) {
     if (isNetworkError(err)) return enterOfflineFromLastSession(token);
+    if (err.sessionExpired) return; // handleSessionExpired already showed the login screen
     console.error(err);
     clearTokenSession();
     loginStatus.textContent = `Não foi possível verificar seu acesso: ${err.message}`;
