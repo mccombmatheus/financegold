@@ -1,49 +1,190 @@
 let allUsuariosAdmin = [];
 let usuariosAdminFormReady = false;
+let usuarioEditingLinha = null;
+let usuarioRemoveConfirmLinha = null;
+
+function usuariosAdminStatus(message) {
+  const el = document.getElementById("usuarios-admin-status");
+  if (el) el.textContent = message || "";
+}
+
+function looksLikeEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isCurrentUser(usuario) {
+  return (usuario.email || "").trim().toLowerCase() === (currentEmail || "").trim().toLowerCase();
+}
+
+function countMasters() {
+  return allUsuariosAdmin.filter((u) => u.perfil === ROLE_MASTER).length;
+}
+
+function makeAdminButton(label, onClick, extraClass) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = `usuario-action-btn${extraClass ? " " + extraClass : ""}`;
+  btn.textContent = label;
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+async function saveUsuarioEdit(usuario, nome, email) {
+  const novoNome = nome.trim();
+  const novoEmail = email.trim();
+  if (!novoNome) return usuariosAdminStatus("Informe o nome.");
+  if (!looksLikeEmail(novoEmail)) return usuariosAdminStatus("Informe um e-mail válido.");
+  const emailTaken = allUsuariosAdmin.some(
+    (u) => u.linha !== usuario.linha && u.email.trim().toLowerCase() === novoEmail.toLowerCase()
+  );
+  if (emailTaken) return usuariosAdminStatus("Esse e-mail já está cadastrado.");
+
+  usuariosAdminStatus("Salvando...");
+  try {
+    if (novoNome !== usuario.nome) await updateUsuarioNome(usuario.linha, novoNome, accessToken);
+    if (novoEmail.toLowerCase() !== usuario.email.toLowerCase()) await updateUsuarioEmail(usuario.linha, novoEmail, accessToken);
+    usuarioEditingLinha = null;
+    await refreshUsuariosAdmin();
+    usuariosAdminStatus("Alterações salvas.");
+  } catch (err) {
+    console.error(err);
+    usuariosAdminStatus(`Erro ao salvar: ${describeSaveError(err)}`);
+  }
+}
+
+async function confirmUsuarioRemoval(usuario) {
+  usuariosAdminStatus("Removendo...");
+  try {
+    await removeUsuario(usuario.linha, accessToken);
+    usuarioRemoveConfirmLinha = null;
+    await refreshUsuariosAdmin();
+    usuariosAdminStatus(`${usuario.nome || usuario.email} não tem mais acesso.`);
+  } catch (err) {
+    console.error(err);
+    usuariosAdminStatus(`Erro ao remover: ${describeSaveError(err)}`);
+  }
+}
+
+function buildPerfilSelect(usuario) {
+  const select = document.createElement("select");
+  ALL_ROLES.forEach((role) => {
+    const opt = document.createElement("option");
+    opt.value = role;
+    opt.textContent = role;
+    if (role === usuario.perfil) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.addEventListener("change", async () => {
+    const previous = usuario.perfil;
+    // Never leave a company with no Master: nobody could manage access anymore.
+    if (previous === ROLE_MASTER && select.value !== ROLE_MASTER && countMasters() <= 1) {
+      select.value = previous;
+      usuariosAdminStatus("A empresa precisa ter pelo menos um Master. Torne outra pessoa Master antes.");
+      return;
+    }
+    select.disabled = true;
+    try {
+      await updateUsuarioPerfil(usuario.linha, select.value, accessToken);
+      usuario.perfil = select.value;
+      usuariosAdminStatus("Perfil atualizado.");
+    } catch (err) {
+      console.error(err);
+      usuariosAdminStatus(`Erro ao salvar: ${describeSaveError(err)}`);
+      select.value = previous;
+    } finally {
+      select.disabled = false;
+    }
+  });
+  return select;
+}
 
 function renderUsuariosTable() {
   const tbody = document.querySelector("#usuarios-table tbody");
   tbody.innerHTML = "";
 
   allUsuariosAdmin.forEach((usuario) => {
+    const editing = usuarioEditingLinha === usuario.linha;
+    const confirmingRemoval = usuarioRemoveConfirmLinha === usuario.linha;
     const tr = document.createElement("tr");
 
     const nomeTd = document.createElement("td");
     nomeTd.className = "usuario-col-nome";
-    nomeTd.textContent = usuario.nome;
-    tr.appendChild(nomeTd);
-
     const emailTd = document.createElement("td");
     emailTd.className = "usuario-col-email";
-    emailTd.textContent = usuario.email;
+    let nomeInput = null;
+    let emailInput = null;
+    if (editing) {
+      nomeInput = document.createElement("input");
+      nomeInput.type = "text";
+      nomeInput.value = usuario.nome;
+      nomeInput.setAttribute("aria-label", "Nome");
+      nomeTd.appendChild(nomeInput);
+      emailInput = document.createElement("input");
+      emailInput.type = "email";
+      emailInput.value = usuario.email;
+      emailInput.setAttribute("aria-label", "E-mail");
+      emailTd.appendChild(emailInput);
+    } else {
+      nomeTd.textContent = usuario.nome;
+      emailTd.textContent = usuario.email;
+    }
+    tr.appendChild(nomeTd);
     tr.appendChild(emailTd);
 
     const perfilTd = document.createElement("td");
     perfilTd.className = "usuario-col-perfil";
-    const select = document.createElement("select");
-    ALL_ROLES.forEach((role) => {
-      const opt = document.createElement("option");
-      opt.value = role;
-      opt.textContent = role;
-      if (role === usuario.perfil) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener("change", async () => {
-      const previous = usuario.perfil;
-      select.disabled = true;
-      try {
-        await updateUsuarioPerfil(usuario.linha, select.value, accessToken);
-        usuario.perfil = select.value;
-      } catch (err) {
-        console.error(err);
-        alert(describeSaveError(err));
-        select.value = previous;
-      } finally {
-        select.disabled = false;
-      }
-    });
-    perfilTd.appendChild(select);
+    perfilTd.appendChild(buildPerfilSelect(usuario));
     tr.appendChild(perfilTd);
+
+    const acoesTd = document.createElement("td");
+    acoesTd.className = "usuario-col-acoes";
+    if (editing) {
+      acoesTd.appendChild(
+        makeAdminButton("Salvar", () => saveUsuarioEdit(usuario, nomeInput.value, emailInput.value), "usuario-action-primary")
+      );
+      acoesTd.appendChild(
+        makeAdminButton("Cancelar", () => {
+          usuarioEditingLinha = null;
+          usuariosAdminStatus("");
+          renderUsuariosTable();
+        })
+      );
+    } else if (confirmingRemoval) {
+      acoesTd.appendChild(makeAdminButton("Confirmar remoção", () => confirmUsuarioRemoval(usuario), "usuario-action-danger"));
+      acoesTd.appendChild(
+        makeAdminButton("Cancelar", () => {
+          usuarioRemoveConfirmLinha = null;
+          usuariosAdminStatus("");
+          renderUsuariosTable();
+        })
+      );
+    } else {
+      acoesTd.appendChild(
+        makeAdminButton("Editar", () => {
+          usuarioEditingLinha = usuario.linha;
+          usuarioRemoveConfirmLinha = null;
+          usuariosAdminStatus("");
+          renderUsuariosTable();
+        })
+      );
+      acoesTd.appendChild(
+        makeAdminButton("Remover", () => {
+          if (isCurrentUser(usuario)) {
+            usuariosAdminStatus("Você não pode remover o seu próprio acesso.");
+            return;
+          }
+          if (usuario.perfil === ROLE_MASTER && countMasters() <= 1) {
+            usuariosAdminStatus("A empresa precisa ter pelo menos um Master.");
+            return;
+          }
+          usuarioEditingLinha = null;
+          usuarioRemoveConfirmLinha = usuario.linha;
+          usuariosAdminStatus("");
+          renderUsuariosTable();
+        }, "usuario-action-danger-soft")
+      );
+    }
+    tr.appendChild(acoesTd);
 
     tbody.appendChild(tr);
   });
@@ -80,6 +221,14 @@ function setupUsuarioAddForm() {
 
     if (!email || !nome) {
       statusEl.textContent = "Preencha e-mail e nome.";
+      return;
+    }
+    if (!looksLikeEmail(email)) {
+      statusEl.textContent = "Informe um e-mail válido.";
+      return;
+    }
+    if (allUsuariosAdmin.some((u) => u.email.trim().toLowerCase() === email.toLowerCase())) {
+      statusEl.textContent = "Esse e-mail já está cadastrado.";
       return;
     }
 

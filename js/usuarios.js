@@ -140,6 +140,16 @@ async function addUsuario(email, nome, perfil, token) {
   await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A${targetRow}:C${targetRow}`, [email, nome, perfil], token);
 }
 
+async function updateUsuarioEmail(linha, email, token) {
+  await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A${linha}:A${linha}`, [email], token);
+}
+
+// Removing someone blanks their row: the rest of the app (and the gateway)
+// skip rows without an email, so they lose access immediately.
+async function removeUsuario(linha, token) {
+  await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A${linha}:C${linha}`, ["", "", ""], token);
+}
+
 async function updateUsuarioPerfil(linha, perfil, token) {
   await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!C${linha}:C${linha}`, [perfil], token);
 }

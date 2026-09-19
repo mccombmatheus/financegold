@@ -2410,3 +2410,86 @@ td select {
     letter-spacing: 0.05em;
   }
 }
+
+/* Ajustes → Usuários com acesso: edit / remove actions */
+.usuario-col-acoes {
+  white-space: nowrap;
+}
+
+.usuario-action-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  margin-right: 0.4rem;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.usuario-action-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.usuario-action-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-weight: 700;
+}
+
+.usuario-action-primary:hover {
+  background: var(--color-accent-hover);
+  color: var(--color-accent-contrast);
+}
+
+.usuario-action-danger-soft:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.usuario-action-danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+#usuarios-table td input {
+  width: 100%;
+  min-width: 140px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 860px) {
+  .usuario-col-acoes {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding-top: 0.4rem;
+  }
+
+  .usuario-col-acoes .usuario-action-btn {
+    margin-right: 0;
+    flex: 1 1 auto;
+  }
+
+  #usuarios-table td input {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 860px) {
+  .usuario-col-email {
+    font-size: 0.72rem;
+  }
+}
