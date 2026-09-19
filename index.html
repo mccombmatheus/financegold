@@ -114,6 +114,61 @@
   </div>
 </div>
 
+<div id="sistema-screen" class="sistema-screen" hidden>
+  <header class="sistema-topo">
+    <div class="sistema-marca"><span class="sidebar-logo" data-art="logo"></span><span class="sidebar-title">FinanGold</span></div>
+    <div class="sistema-topo-meio">
+      <span class="topbar-eyebrow">// painel do sistema</span>
+      <span class="sistema-email" id="sistema-email"></span>
+    </div>
+    <div class="sistema-topo-acoes">
+      <button type="button" id="btn-sistema-atualizar" class="usuario-action-btn">Atualizar</button>
+      <button type="button" id="btn-sistema-abrir-empresa" class="usuario-action-btn" hidden>Abrir uma empresa</button>
+      <button type="button" id="btn-sistema-sair" class="btn-logout">Sair</button>
+    </div>
+  </header>
+  <main class="sistema-main">
+    <section class="card">
+      <h2>Pedidos de acesso <span id="sistema-pedidos-contador" class="sistema-contador"></span></h2>
+      <p class="field-hint">Quem entrou com uma conta Google sem acesso pode pedir liberação. Este painel não mostra dados financeiros de nenhuma empresa.</p>
+      <div id="pedidos-lista" class="pedidos-lista"></div>
+      <p id="pedidos-status" class="status-message"></p>
+    </section>
+
+    <section class="card">
+      <h2>Criar empresa</h2>
+      <p class="field-hint">A pessoa informada vira Master da empresa nova e entra com a conta Google dela, vendo só essa empresa.</p>
+      <form id="empresa-add-form" class="lancamento-form">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="empresa-add-nome">Nome da empresa</label>
+            <input type="text" id="empresa-add-nome" maxlength="80" required>
+          </div>
+          <div class="form-field">
+            <label for="empresa-add-email">E-mail Google do administrador</label>
+            <input type="email" id="empresa-add-email" required>
+          </div>
+          <div class="form-field">
+            <label for="empresa-add-dono">Nome do administrador</label>
+            <input type="text" id="empresa-add-dono" maxlength="80" required>
+          </div>
+        </div>
+        <label class="check-line"><input type="checkbox" id="empresa-add-meu-acesso"> Entrar também como Master nessa empresa (só para dar suporte)</label>
+        <div class="form-actions">
+          <button type="submit" id="btn-empresa-add">Criar empresa</button>
+          <span id="empresa-add-status" class="status-message"></span>
+        </div>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Empresas cadastradas</h2>
+      <ul id="sistema-empresas" class="lista-simples"></ul>
+      <p id="sistema-empresas-status" class="status-message"></p>
+    </section>
+  </main>
+</div>
+
 <div id="app-shell" class="app-shell" hidden>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -145,7 +200,7 @@
           <button type="button" class="nav-item nav-subitem" data-view="estoque-form">Nova peça</button>
         </div>
       </div>
-      <button type="button" class="nav-item" data-view="ajustes"><span class="nav-idx">04</span>Ajustes<span class="nav-badge" id="ajustes-badge" hidden></span></button>
+      <button type="button" class="nav-item" data-view="ajustes"><span class="nav-idx">04</span>Ajustes</button>
     </nav>
     <div class="sidebar-footer">
       <div class="user-identity">
@@ -477,37 +532,12 @@
           </div>
         </section>
 
-        <section class="card" id="ajustes-empresas-section" hidden>
-          <h2>Empresas</h2>
-          <p class="field-hint">Crie uma empresa nova para outro empresário usar o app. Ele entra com a conta Google dele e vê apenas a empresa dele.</p>
-          <ul id="empresas-admin-lista" class="lista-simples"></ul>
-
-          <h3 class="sub-titulo">Pedidos de acesso</h3>
-          <div id="pedidos-lista" class="pedidos-lista"></div>
-          <p id="pedidos-status" class="status-message"></p>
-
-          <h3 class="sub-titulo">Criar empresa</h3>
-          <form id="empresa-add-form" class="lancamento-form">
-            <div class="form-grid">
-              <div class="form-field">
-                <label for="empresa-add-nome">Nome da empresa</label>
-                <input type="text" id="empresa-add-nome" maxlength="80" required>
-              </div>
-              <div class="form-field">
-                <label for="empresa-add-email">E-mail Google do administrador</label>
-                <input type="email" id="empresa-add-email" required>
-              </div>
-              <div class="form-field">
-                <label for="empresa-add-dono">Nome do administrador</label>
-                <input type="text" id="empresa-add-dono" maxlength="80" required>
-              </div>
-            </div>
-            <label class="check-line"><input type="checkbox" id="empresa-add-meu-acesso" checked> Manter o meu acesso a essa empresa (para dar suporte)</label>
-            <div class="form-actions">
-              <button type="submit" id="btn-empresa-add">Criar empresa</button>
-              <span id="empresa-add-status" class="status-message"></span>
-            </div>
-          </form>
+        <section class="card" id="ajustes-sistema-card" hidden>
+          <h2>Painel do sistema</h2>
+          <p>Área do administrador do sistema: liberar acessos e criar empresas. Fica separada dos dados das empresas.</p>
+          <div class="form-actions">
+            <button type="button" id="btn-ir-sistema">Abrir o Painel do sistema</button>
+          </div>
         </section>
 
         <div id="ajustes-usuarios-section" hidden>
@@ -600,7 +630,7 @@
 <script src="js/usuarios.js"></script>
 <script src="js/usuarios-admin.js"></script>
 <script src="js/listas-admin.js"></script>
-<script src="js/empresas-admin.js"></script>
+<script src="js/sistema.js"></script>
 <script src="js/solicitar-acesso.js"></script>
 <script src="js/art.js"></script>
 <script src="js/dashboard-data.js"></script>

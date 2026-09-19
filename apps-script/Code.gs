@@ -31,11 +31,18 @@ const GATEWAY_CONFIG = {
 
   // May set up a company whose Usuários tab is missing or empty (becoming its
   // first Master). Everyone else must be added by an existing Master.
-  ADMIN_EMAILS: ["mccomb.matheus@gmail.com"],
+  // The developer / system account comes first. The personal account stays here
+  // only until the new one is confirmed working; then remove it (it would keep
+  // seeing the Painel do sistema).
+  ADMIN_EMAILS: ["finanponto@gmail.com", "mccomb.matheus@gmail.com"],
 
   // Where people are sent in the e-mails about access requests.
   APP_URL: "https://mccombmatheus.github.io/financegold/",
 };
+
+// Shown by the public banner (a GET on the /exec URL) so it is easy to confirm
+// which version of this file is really deployed.
+const GATEWAY_VERSION = "2026-09-19-painel-do-sistema";
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
@@ -113,7 +120,25 @@ function doPost(e) {
 }
 
 function doGet() {
-  return ContentService.createTextOutput("FinanGold gateway ativo.");
+  return ContentService.createTextOutput("FinanGold gateway ativo. Versão " + GATEWAY_VERSION);
+}
+
+// Run this from the Apps Script editor (it is NOT reachable through the web
+// app): prints what has to be moved when the system changes accounts — the
+// registry spreadsheet id and every company spreadsheet — with direct links.
+function diagnostico_migracao() {
+  const cache = CacheService.getScriptCache();
+  const link = (id) => "https://docs.google.com/spreadsheets/d/" + id;
+  console.log("Versão do servidor: " + GATEWAY_VERSION);
+  console.log("Registro de empresas (propriedade " + REGISTRY_PROP + "): " + (PropertiesService.getScriptProperties().getProperty(REGISTRY_PROP) || "(ainda não criado)"));
+  Object.keys(GATEWAY_CONFIG.SPREADSHEETS).forEach((id) => {
+    console.log("Empresa fixa no servidor: " + GATEWAY_CONFIG.SPREADSHEETS[id].empresa + " -> " + link(id));
+  });
+  registryDeps_(cache).list().forEach((c) => {
+    console.log("Empresa criada pelo app: " + c.empresa + " -> " + link(c.spreadsheetId));
+  });
+  const registryId = PropertiesService.getScriptProperties().getProperty(REGISTRY_PROP);
+  if (registryId) console.log("Planilha do registro (transferir também): " + link(registryId));
 }
 
 function realDeps_() {
@@ -361,6 +386,8 @@ function handleRequest(body, deps) {
   if (action === "requestAccess") return actionRequestAccess_(deps, email, body);
   if (action === "listRequests") return actionListRequests_(deps, email);
   if (action === "resolveRequest") return actionResolveRequest_(deps, email, body);
+  if (action === "listCompanies") return actionListCompanies_(deps, email);
+  if (action === "forwardRequest") return actionForwardRequest_(deps, email, body);
 
   const spreadsheet = companyMap_(deps)[body.spreadsheetId];
   if (!spreadsheet) throw new GatewayError_(403, "Empresa não permitida.");
@@ -460,6 +487,9 @@ function actionMe_(deps, email) {
     }
   });
   const result = { companies: companies, bootstrap: bootstrap, superAdmin: isAdminEmail_(deps, email) };
+  if (result.superAdmin && deps.requests) {
+    result.pedidosPendentes = deps.requests.list().filter((r) => r.status === "Pendente").length;
+  }
   if (companies.length === 0 && bootstrap.length === 0 && deps.requests) {
     const mine = deps.requests.list().filter((r) => r.email === email);
     const last = mine[mine.length - 1];
@@ -490,7 +520,9 @@ function actionCreateCompany_(deps, email, body) {
   return deps.lock(() => {
     const spreadsheetId = deps.sheets.createCompanySpreadsheet(nome + " — FinanGold", nome);
     const rows = [[ownerEmail, ownerNome, ROLE_MASTER]];
-    if (body.incluirMeuAcesso !== false && email !== ownerEmail) rows.push([email, "Administrador do sistema", ROLE_MASTER]);
+    // Separation of duties: the system administrator only enters a company's
+    // data if they explicitly ask for it (support). Default: not a member.
+    if (body.incluirMeuAcesso === true && email !== ownerEmail) rows.push([email, "Administrador do sistema", ROLE_MASTER]);
     rows.forEach((row, i) => {
       deps.sheets.updateValues(spreadsheetId, USUARIOS_TAB + "!A" + (i + 2) + ":C" + (i + 2), [row]);
     });
@@ -546,7 +578,7 @@ function actionRequestAccess_(deps, email, body) {
           "Empresa: " + empresa + "\n" +
           "Tipo: " + (tipo === "nova" ? "quer usar o FinanGold na própria empresa" : "trabalha em uma empresa que já usa") + "\n" +
           "Mensagem: " + (mensagem || "(sem mensagem)") + "\n\n" +
-          "Para responder, entre em " + deps.config.APP_URL + " e abra Ajustes > Empresas > Pedidos de acesso.",
+          "Para responder, entre em " + deps.config.APP_URL + " e abra o Painel do sistema.",
       });
     } catch (err) {
       console.error(err);
@@ -595,6 +627,73 @@ function actionResolveRequest_(deps, email, body) {
       }
     }
     return { resolved: true };
+  });
+}
+
+// Administrative overview for the system console: which companies exist, how
+// many people each has and who their Master(s) are. No business data (no
+// lançamentos, no estoque) is ever returned here.
+function actionListCompanies_(deps, email) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const known = companyMap_(deps);
+  const fixed = deps.config.SPREADSHEETS;
+  const out = [];
+  Object.keys(known).slice(0, MAX_COMPANIES).forEach((spreadsheetId) => {
+    let usuarios = null;
+    try {
+      usuarios = loadUsuarios_(deps, spreadsheetId);
+    } catch (err) {
+      usuarios = null;
+    }
+    const list = usuarios || [];
+    out.push({
+      spreadsheetId: spreadsheetId,
+      empresa: known[spreadsheetId].empresa,
+      origem: fixed[spreadsheetId] ? "fixa" : "criada",
+      usuarios: list.length,
+      masters: list.filter((u) => u.perfil === ROLE_MASTER).map((u) => ({ nome: u.nome, email: u.email })),
+    });
+  });
+  return { empresas: out };
+}
+
+// A person who says they work at a company that already uses the app is not
+// the system administrator's to approve: the request is e-mailed to that
+// company's own Master(s), who register the person in their own Ajustes.
+function actionForwardRequest_(deps, email, body) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const linha = Number(body.linha);
+  if (!Number.isInteger(linha) || linha < 2) throw new GatewayError_(400, "Pedido inválido.");
+  const company = companyMap_(deps)[body.spreadsheetId];
+  if (!company) throw new GatewayError_(400, "Empresa não encontrada.");
+
+  return deps.lock(() => {
+    const pedido = deps.requests.list().filter((r) => r.linha === linha)[0];
+    if (!pedido) throw new GatewayError_(400, "Pedido não encontrado.");
+    if (pedido.status !== "Pendente") throw new GatewayError_(400, "Esse pedido já foi respondido.");
+    const masters = (loadUsuarios_(deps, body.spreadsheetId) || []).filter((u) => u.perfil === ROLE_MASTER);
+    if (masters.length === 0) throw new GatewayError_(400, "Essa empresa não tem um administrador cadastrado.");
+
+    deps.requests.setStatus(linha, "Encaminhada", "Encaminhado para " + company.empresa);
+    try {
+      deps.mail.send({
+        to: masters.map((m) => m.email).join(","),
+        subject: "FinanGold: " + pedido.nome + " pediu acesso à " + company.empresa,
+        body:
+          pedido.nome + " (" + pedido.email + ") pediu acesso ao FinanGold como pessoa da empresa " + company.empresa + ".\n\n" +
+          "Mensagem: " + (pedido.mensagem || "(sem mensagem)") + "\n\n" +
+          "Se você reconhece essa pessoa e quer liberar, entre em " + deps.config.APP_URL +
+          " e abra Ajustes > Adicionar usuário, informando este e-mail e o perfil desejado. Se não reconhece, ignore esta mensagem.",
+      });
+      deps.mail.send({
+        to: pedido.email,
+        subject: "FinanGold: seu pedido foi encaminhado",
+        body: "Olá, " + pedido.nome + ".\n\nSeu pedido foi encaminhado ao administrador da empresa " + company.empresa + ", que decide quem tem acesso. Quando ele cadastrar o seu e-mail, é só entrar em " + deps.config.APP_URL + " com esta conta Google.\n",
+      });
+    } catch (err) {
+      console.error(err);
+    }
+    return { forwarded: true, para: masters.length };
   });
 }
 

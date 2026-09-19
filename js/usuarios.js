@@ -150,18 +150,6 @@ async function removeUsuario(linha, token) {
   await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A${linha}:C${linha}`, ["", "", ""], token);
 }
 
-// Adds a person to a company other than the one currently open (used when the
-// system administrator answers an access request). Same row rules as addUsuario.
-async function addUsuarioTo(spreadsheetId, email, nome, perfil, token) {
-  const rows = await fetchSheetValues(spreadsheetId, `${USUARIOS_SHEET_NAME}!A2:A`, token, { valueRenderOption: "UNFORMATTED_VALUE" });
-  let lastOffset = -1;
-  rows.forEach((row, index) => {
-    if (row[0] !== undefined && row[0] !== null && row[0] !== "") lastOffset = index;
-  });
-  const targetRow = (lastOffset === -1 ? 1 : 2 + lastOffset) + 1;
-  await updateSheetRow(spreadsheetId, `${USUARIOS_SHEET_NAME}!A${targetRow}:C${targetRow}`, [email, nome, perfil], token);
-}
-
 async function updateUsuarioPerfil(linha, perfil, token) {
   await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!C${linha}:C${linha}`, [perfil], token);
 }

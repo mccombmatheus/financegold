@@ -2728,3 +2728,78 @@ td select {
 .pedido-add .usuario-action-btn {
   margin-right: 0;
 }
+
+/* Painel do sistema: its own screen, outside any company */
+.company-picker-sistema {
+  border-color: var(--color-edge);
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.sistema-screen {
+  min-height: 100vh;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.sistema-topo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.sistema-marca {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.sistema-topo-meio {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.sistema-email {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+
+.sistema-topo-acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.sistema-topo-acoes .usuario-action-btn {
+  margin-right: 0;
+}
+
+.sistema-main {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.sistema-contador {
+  color: var(--color-accent);
+}
+
+@media (max-width: 860px) {
+  .sistema-topo {
+    padding: max(0.85rem, env(safe-area-inset-top)) 1rem 0.85rem;
+  }
+
+  .sistema-main {
+    padding: 1rem 1rem 2rem;
+  }
+}

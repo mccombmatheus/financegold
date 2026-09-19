@@ -47,7 +47,7 @@ O servidor só toca nas planilhas listadas ali.
 
 ## Empresas criadas de dentro do app
 
-O administrador do sistema (os e-mails em `ADMIN_EMAILS`, no `Code.gs`) cria empresas novas em **Ajustes → Empresas**, sem mexer em código. O servidor cria uma planilha nova (com todas as abas e listas iniciais) na conta que implantou este script, cadastra o administrador da empresa como Master e registra a empresa em uma planilha chamada "Registro de empresas" (criada sozinha na primeira vez; o ID dela fica nas propriedades do script).
+O administrador do sistema (os e-mails em `ADMIN_EMAILS`, no `Code.gs`) cria empresas novas no **Painel do sistema**, sem mexer em código. O servidor cria uma planilha nova (com todas as abas e listas iniciais) na conta que implantou este script, cadastra o administrador da empresa como Master e registra a empresa em uma planilha chamada "Registro de empresas" (criada sozinha na primeira vez; o ID dela fica nas propriedades do script).
 
 - As empresas que já estão em `SPREADSHEETS` continuam funcionando; as criadas pelo app são somadas a elas.
 - Depois de colar um `Code.gs` novo, crie uma **nova versão** da implantação (**Implantar → Gerenciar implantações → lápis → Nova versão**).
@@ -56,9 +56,17 @@ O administrador do sistema (os e-mails em `ADMIN_EMAILS`, no `Code.gs`) cria emp
 
 ## Pedidos de acesso
 
-Quem entra com uma conta Google que ainda não tem acesso vê um formulário para **pedir acesso** (nome, empresa, mensagem). O servidor guarda o pedido na planilha "Registro de empresas" (aba "Solicitações") e **manda um e-mail** para os `ADMIN_EMAILS`. O administrador responde em **Ajustes → Empresas → Pedidos de acesso** (criar a empresa, adicionar a uma empresa que já existe, ou recusar); quem pediu recebe um e-mail com a resposta.
+Quem entra com uma conta Google que ainda não tem acesso vê um formulário para **pedir acesso** (nome, empresa, mensagem). O servidor guarda o pedido na planilha "Registro de empresas" (aba "Solicitações") e **manda um e-mail** para os `ADMIN_EMAILS`. O administrador do sistema responde no **Painel do sistema** (criar a empresa, encaminhar o pedido ao administrador de uma empresa que já existe, ou recusar); quem pediu recebe um e-mail com a resposta.
 
 - Enviar e-mail exige uma permissão nova (`script.send_mail`, já no `appsscript.json`). Ao colar o `Code.gs` **e** o `appsscript.json` novos e criar a nova versão, o Google pede para você **autorizar** de novo: **Autorizar acesso → escolha a conta → Avançado → Acessar → Permitir**.
 - Se o e-mail falhar, o pedido continua salvo e aparece na lista do app.
 - Limites contra abuso: um pedido em análise por e-mail, um minuto entre tentativas, textos curtos e sem quebras de linha nos campos curtos, no máximo 300 pedidos pendentes. O envio de e-mails tem limite diário do Google (cerca de 100 destinatários por dia em conta gratuita).
 - Ajuste `APP_URL` no `Code.gs` se o endereço do app mudar (ele vai nos e-mails).
+
+## Separação: desenvolvedor x pessoas das empresas
+
+- **Quem acessa os dados de uma empresa:** só as pessoas cadastradas no perfil dela (aba Usuários), pelos Masters dela.
+- **Quem libera acessos e cria empresas:** só as contas de `ADMIN_EMAILS`, no **Painel do sistema**, uma tela fora de qualquer empresa. O painel mostra pedidos, a lista de empresas (nome, quantidade de pessoas, e-mail dos Masters) e a criação de empresa, e **nunca** dados financeiros. O servidor também impede que essa conta leia os dados de uma empresa da qual ela não é membro.
+- Ao criar uma empresa, o administrador do sistema **não entra nela** a menos que marque a caixa de suporte.
+- Pedidos de quem diz trabalhar em uma empresa que já existe são **encaminhados por e-mail ao Master dessa empresa**, que cadastra a pessoa no próprio perfil.
+- Para usar uma conta de desenvolvedor separada da pessoal: coloque o e-mail dela em `ADMIN_EMAILS`, faça o login com ela (cai direto no Painel do sistema) e, depois de conferir, tire o e-mail pessoal da lista.

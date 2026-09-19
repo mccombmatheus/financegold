@@ -178,7 +178,7 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
 (function () {
   const state = freshState();
   const step = (who, body) => { const d = makeDeps(state); try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), d) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
-  const made = step("admin", { action: "createCompany", nome: "Empresa Nova", ownerEmail: "Dono@Nova.com", ownerNome: "Dona Nova" });
+  const made = step("admin", { action: "createCompany", nome: "Empresa Nova", ownerEmail: "Dono@Nova.com", ownerNome: "Dona Nova", incluirMeuAcesso: true });
   results.push((made.ok && made.data.spreadsheetId === "NEW1" ? "PASS" : "FAIL") + " admin creates a company");
   results.push((state.__registry.length === 1 && state.__registry[0].empresa === "Empresa Nova" ? "PASS" : "FAIL") + " the new company is recorded in the registry");
   const usr = state.NEW1["Usuários"];
@@ -214,7 +214,7 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   results.push((!badTab.ok && badTab.status === 403 ? "PASS" : "FAIL") + " tabs outside the allow-list stay refused, even for a Master");
   const dup = step("admin", { action: "createCompany", nome: "empresa nova", ownerEmail: "x@x.com", ownerNome: "X" });
   results.push((!dup.ok && dup.status === 400 ? "PASS" : "FAIL") + " a second company with the same name is refused");
-  const noSelf = step("admin", { action: "createCompany", nome: "Terceira", ownerEmail: "t@x.com", ownerNome: "T", incluirMeuAcesso: false });
+  const noSelf = step("admin", { action: "createCompany", nome: "Terceira", ownerEmail: "t@x.com", ownerNome: "T" });
   results.push((noSelf.ok && state.NEW2["Usuários"].length === 2 ? "PASS" : "FAIL") + " incluirMeuAcesso=false leaves the admin out of the new company");
 })();
 
@@ -232,7 +232,7 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   results.push((r1.ok && r1.data.duplicate === false && state.__requests.length === 1 ? "PASS" : "FAIL") + " a stranger can ask for access");
   results.push((state.__requests[0].status === "Pendente" && state.__requests[0].email === "novato@gmail.com" ? "PASS" : "FAIL") + " the request is stored as Pendente with the verified e-mail (not one typed by the user)");
   const mail = state.__mail[0];
-  results.push((mail && mail.to === ADMIN_EMAIL && /Ana Souza/.test(mail.subject) && /Padaria Ana/.test(mail.body) ? "PASS" : "FAIL") + " the administrator is e-mailed with the details");
+  results.push((mail && mail.to.split(",").indexOf(ADMIN_EMAIL) !== -1 && /Ana Souza/.test(mail.subject) && /Padaria Ana/.test(mail.body) ? "PASS" : "FAIL") + " the administrator is e-mailed with the details");
   const r2 = call("stranger", good);
   results.push((!r2.ok && r2.status === 429 ? "PASS" : "FAIL") + " sending again right away is rate-limited");
   deps.cache.remove("reqcool_novato@gmail.com");
@@ -290,6 +290,49 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   results.push((meN.ok && !meN.data.pedido ? "PASS" : "FAIL") + " me() has no 'pedido' for someone who never asked");
   const meV = call("viz", { action: "me" });
   results.push((meV.ok && !("pedido" in meV.data) ? "PASS" : "FAIL") + " me() has no 'pedido' for someone who already has a company");
+})();
+
+
+// --- system console: company overview + forwarding requests to a company's own Master
+(function () {
+  const state = freshState(); const deps = makeDeps(state);
+  const call = (who, body) => { try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), deps) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
+  const lc = (who) => call(who, { action: "listCompanies" });
+  results.push((lc("admin").ok && lc("admin").data.empresas.length >= 2 ? "PASS" : "FAIL") + " the admin lists all companies");
+  results.push((!lc("mas").ok && lc("mas").status === 403 && !lc("edi").ok && !lc("viz").ok && !lc("nobody").ok ? "PASS" : "FAIL") + " nobody but the system admin can list companies (not even a company Master)");
+  const ipa = lc("admin").data.empresas.filter((c) => c.spreadsheetId === IPA)[0];
+  results.push((ipa && ipa.usuarios >= 4 && ipa.masters.some((m) => m.email === "mas@x.com") && ipa.origem === "fixa" ? "PASS" : "FAIL") + " the overview shows user count, the Master(s) and the origin");
+  results.push((JSON.stringify(lc("admin").data).indexOf("Estoque") === -1 && !("values" in lc("admin").data) ? "PASS" : "FAIL") + " the overview carries no business data");
+
+  // create a company WITHOUT the admin -> the admin cannot read its data
+  call("admin", { action: "createCompany", nome: "Sem Suporte", ownerEmail: "d@x.com", ownerNome: "D" });
+  const id = state.__registry[0].spreadsheetId;
+  const peek = call("admin", { action: "getValues", spreadsheetId: id, range: "Lançamento!A2:J" });
+  results.push((!peek.ok && peek.status === 403 ? "PASS" : "FAIL") + " the system admin cannot read the business data of a company they are not a member of");
+  const peek2 = call("admin", { action: "updateValues", spreadsheetId: id, range: "Usuários!A9:C9", values: [["e@x.com", "E", "Master"]] });
+  results.push((!peek2.ok && peek2.status === 403 ? "PASS" : "FAIL") + " …nor change that company's users");
+
+  // forwarding
+  TOKENS.req = "func@existente.com";
+  handleRequest({ token: "req", action: "requestAccess", nome: "Fernanda", empresa: "Ipanema", tipo: "existente", mensagem: "Sou vendedora" }, deps);
+  const linha = state.__requests[state.__requests.length - 1].linha;
+  const mailsBefore = state.__mail.length;
+  const fwd = (who, b) => call(who, Object.assign({ action: "forwardRequest" }, b));
+  results.push((!fwd("mas", { linha, spreadsheetId: IPA }).ok && fwd("mas", { linha, spreadsheetId: IPA }).status === 403 ? "PASS" : "FAIL") + " a company Master cannot forward requests");
+  results.push((fwd("admin", { linha: 1, spreadsheetId: IPA }).status === 400 && fwd("admin", { linha, spreadsheetId: "NOPE" }).status === 400 && fwd("admin", { linha: 999, spreadsheetId: IPA }).status === 400 ? "PASS" : "FAIL") + " bad row / unknown company / unknown request are refused");
+  const ok = fwd("admin", { linha, spreadsheetId: IPA });
+  results.push((ok.ok && ok.data.forwarded === true && state.__requests.filter((r) => r.linha === linha)[0].status === "Encaminhada" ? "PASS" : "FAIL") + " a request is forwarded and marked Encaminhada");
+  const toMasters = state.__mail[mailsBefore];
+  results.push((toMasters && toMasters.to.indexOf("mas@x.com") !== -1 && toMasters.to.indexOf("viz@x.com") === -1 && /Fernanda/.test(toMasters.subject) ? "PASS" : "FAIL") + " the e-mail goes to that company's Master(s) only");
+  const toRequester = state.__mail[mailsBefore + 1];
+  results.push((toRequester && toRequester.to === "func@existente.com" && /encaminhado/.test(toRequester.subject) ? "PASS" : "FAIL") + " the requester is told it was forwarded");
+  results.push((fwd("admin", { linha, spreadsheetId: IPA }).status === 400 ? "PASS" : "FAIL") + " a forwarded request cannot be forwarded again");
+  // company without a Master
+  state.__created = 0;
+  handleRequest({ token: "nobody", action: "requestAccess", nome: "Z", empresa: "Y", tipo: "existente" }, deps);
+  const l2 = state.__requests[state.__requests.length - 1].linha;
+  const noMaster = fwd("admin", { linha: l2, spreadsheetId: CAR });
+  results.push((noMaster.status === 400 ? "PASS" : "FAIL") + " forwarding to a company with no administrator is refused");
 })();
 
 const failed = results.filter((r) => r.indexOf("FAIL") === 0);
