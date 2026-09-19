@@ -61,6 +61,22 @@ const KPI_ICONS = {
   gem: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 3h12l4 6-10 12L2 9z"/></svg>',
 };
 
+// One small icon per segment for the quantity tiles. Fixed developer-authored
+// strings, picked by a whitelisted segment id (never built from data).
+const ICONES_SEGMENTO = {
+  joalheria: KPI_ICONS.gem,
+  petshop: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="6" cy="10" r="2"/><circle cx="10" cy="5.5" r="2"/><circle cx="15" cy="5.5" r="2"/><circle cx="19" cy="10" r="2"/><path d="M12 12c-3 0-6 3-6 5.5 0 2 1.7 2.7 3.2 2.3 1-.3 1.8-.6 2.8-.6s1.8.3 2.8.6c1.5.4 3.2-.3 3.2-2.3 0-2.5-3-5.5-6-5.5z"/></svg>',
+  comercio: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6a3 3 0 016 0v2"/></svg>',
+  servicos: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/></svg>',
+  alimentacao: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M7 3v8M5 3v5a2 2 0 004 0V3M7 11v10"/><path d="M17 21V3c-2.5 1.5-3 5-3 8h3"/></svg>',
+  saude: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7V3z"/></svg>',
+  outro: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>',
+};
+
+function iconeDoSegmento() {
+  return ICONES_SEGMENTO[segmentoValido(segmentoAtual)];
+}
+
 // null when there's no meaningful baseline (no previous-period data, or it
 // was zero) — the caller skips rendering a trend line rather than showing a
 // fake/divide-by-zero percentage.
@@ -127,7 +143,7 @@ function buildKpiTile({ label, labelExtra, value, icon, iconClass, trend, hero, 
   if (art) {
     const artSlot = document.createElement("div");
     artSlot.className = `stat-art stat-art-${art}`;
-    artSlot.appendChild(art === "hero" ? buildHeroArt() : buildIngotArt());
+    artSlot.appendChild(art === "hero" ? buildHeroArt() : buildSegmentArt(segmentoAtual));
     tile.appendChild(artSlot);
   }
 
@@ -218,7 +234,7 @@ function renderKpis(records, prevRecords, series) {
       label: vocab("kpiCompra"),
       labelExtra: vocab("kpiCompraExtra"),
       value: formatQuantidade(kpis.pesoComprado),
-      icon: KPI_ICONS.gem,
+      icon: iconeDoSegmento(),
       iconClass: "neutral",
       art: "ingot",
       trend: trendFor(kpis.pesoComprado, "pesoComprado"),
@@ -229,7 +245,7 @@ function renderKpis(records, prevRecords, series) {
       label: vocab("kpiVenda"),
       labelExtra: vocab("kpiVendaExtra"),
       value: formatQuantidade(kpis.pesoVendido),
-      icon: KPI_ICONS.gem,
+      icon: iconeDoSegmento(),
       iconClass: "neutral",
       art: "ingot",
       trend: trendFor(kpis.pesoVendido, "pesoVendido"),

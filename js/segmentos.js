@@ -95,6 +95,7 @@ function aplicarSegmento(id) {
   if (title) title.textContent = seg.marca;
   const caption = document.getElementById("sidebar-segmento");
   if (caption) caption.textContent = `Segmento: ${seg.nome}`;
+  if (typeof trocarLogoSegmento === "function") trocarLogoSegmento(segmentoAtual);
   const espInput = document.getElementById("estoque-field-pureza");
   if (espInput) {
     espInput.type = vocab("espNumerica") ? "number" : "text";
