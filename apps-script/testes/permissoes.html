@@ -1,0 +1,217 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><h3 style="font-family:sans-serif">Testes de permissão do servidor (Code.gs)</h3><pre id="out">rodando…</pre>
+<script src="../Code.gs"></script>
+<script>
+window.onerror=(m,src,l)=>{document.getElementById('out').textContent='ERROR: '+m+' (linha '+l+')';};
+const ADMIN_EMAIL = "mccomb.matheus@gmail.com";
+const IPA = "1nZsFn7K2PpMq36jmBr6hjqHZU8gqHzjPUEzG0rFmmUQ";
+const CAR = "1DdJs0mLYiJuMctNVc-xN1rZgs3OEXOgZI5JJjfeU2AA";
+const TOKENS = { admin: "mccomb.matheus@gmail.com", viz: "viz@x.com", edi: "edi@x.com", mas: "mas@x.com", nobody: "nobody@x.com" };
+
+function makeDeps(state) {
+  const cacheStore = {};
+  return {
+    config: GATEWAY_CONFIG,
+    verifyToken: (t) => { if (!TOKENS[t]) throw new GatewayError_(401, "bad token"); return TOKENS[t]; },
+    cache: { get: (k) => cacheStore[k] || null, put: (k, v) => { cacheStore[k] = v; }, remove: (k) => { delete cacheStore[k]; } },
+    lock: (fn) => fn(),
+    registry: { list: () => state.__registry.slice(), add: (e) => { state.__registry.push({ spreadsheetId: e.spreadsheetId, empresa: e.empresa, sheetName: "Lançamento" }); } },
+    sheets: {
+      getTitles: (id) => Object.keys(state[id]),
+      getValues: (id, range) => { const tab = range.split("!")[0].replace(/^'|'$/g, ""); if (!state[id] || !state[id][tab]) throw new Error("Unable to parse range: " + range); return state[id][tab].slice(1); },
+      updateValues: (id, range, values) => {
+        state[id].__log = (state[id].__log || []).concat([[range, values]]);
+        const m = /^Usuários!A(\d+):C\d+$/.exec(range);
+        if (m) { state[id]["Usuários"] = state[id]["Usuários"] || [["Email", "Nome", "Perfil"]]; state[id]["Usuários"][Number(m[1]) - 1] = values[0]; }
+      },
+      createCompanySpreadsheet: (title, nome) => {
+        const id = "NEW" + (++state.__created);
+        state[id] = {};
+        COMPANY_TEMPLATE.forEach((t) => { state[id][t.name] = [t.headers].concat(t.seeds(nome)); });
+        return id;
+      },
+      addTab: (id, title) => { state[id][title] = [["Email","Nome","Perfil"]]; },
+    },
+  };
+}
+function freshState() {
+  return {
+    __created: 0, __registry: [],
+    [IPA]: { Lojas: [[]], Contas: [[]], Empresas: [[]], Categoria: [[]], Pessoa: [[]], Produto: [[]], "Tipo de Produto": [[]], Marcas: [[]], "Lançamento": [[]], Estoque: [[]], Usuários: [["Email","Nome","Perfil"], ["viz@x.com","Viz","Visualizador"], ["edi@x.com","Edi","Editor"], ["mas@x.com","Mas","Master"], ["mccomb.matheus@gmail.com","Matheus","Master"]] },
+    [CAR]: { "Lançamento": [[]], Estoque: [[]] }, // no Usuários tab yet
+  };
+}
+const results = [];
+function run(name, who, body, expect) {
+  const state = freshState();
+  return runOn(name, who, body, expect, state);
+}
+function runOn(name, who, body, expect, state) {
+  const deps = makeDeps(state);
+  let outcome;
+  try { const data = handleRequest(Object.assign({ token: who }, body), deps); outcome = "ok"; var payload = data; }
+  catch (e) { outcome = e instanceof GatewayError_ ? String(e.status) : "CRASH:" + e.message; }
+  const pass = String(expect) === outcome;
+  results.push((pass ? "PASS " : "FAIL ") + name + "  (expected " + expect + ", got " + outcome + ")");
+  return { outcome, payload, state };
+}
+const u = (extra) => Object.assign({ spreadsheetId: IPA }, extra);
+const row = (r) => [r];
+
+// --- authentication
+run("bad token rejected", "zzz", u({ action: "getTitles" }), 401);
+run("missing action rejected", "viz", u({}), 400);
+run("unknown action rejected", "viz", u({ action: "drop" }), 400);
+run("unlisted spreadsheet id rejected", "mas", { action: "getValues", spreadsheetId: "EVIL", range: "Estoque!A2:P" }, 403);
+
+// --- discovery
+const meNobody = run("me: stranger sees no company", "nobody", { action: "me" }, "ok");
+results.push((meNobody.payload.companies.length === 0 && meNobody.payload.bootstrap.length === 0 ? "PASS" : "FAIL") + " me(nobody) returns empty lists");
+const meViz = run("me: viz sees Ipanema only", "viz", { action: "me" }, "ok");
+results.push((meViz.payload.companies.length === 1 && meViz.payload.companies[0].perfil === "Visualizador" && meViz.payload.bootstrap.length === 0 ? "PASS" : "FAIL") + " me(viz) = 1 company, role Visualizador, no bootstrap");
+const meAdmin = run("me: admin sees Ipanema + bootstrap Carolina", "admin", { action: "me" }, "ok");
+results.push((meAdmin.payload.companies.length === 1 && meAdmin.payload.bootstrap.length === 1 && meAdmin.payload.bootstrap[0].empresa === "Carolina Joias" ? "PASS" : "FAIL") + " me(admin) bootstrap lists Carolina");
+
+// --- Visualizador: read-only
+run("viz reads Estoque", "viz", u({ action: "getValues", range: "Estoque!A2:P" }), "ok");
+run("viz reads ledger tab", "viz", u({ action: "getValues", range: "Lançamento!A2:J" }), "ok");
+run("viz reads lookup w/ space in name", "viz", u({ action: "getValues", range: "Tipo de Produto!A2:D" }), "ok");
+run("viz cannot read Usuários", "viz", u({ action: "getValues", range: "Usuários!A2:C" }), 403);
+run("viz cannot read Usuários via quoted range", "viz", u({ action: "getValues", range: "'Usuários'!A2:C" }), 403);
+run("viz cannot write ledger", "viz", u({ action: "updateValues", range: "Lançamento!A5:J5", values: row(["x"]) }), 403);
+run("viz cannot write Estoque", "viz", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(["x"]) }), 403);
+run("viz can rename self (own row 2)", "viz", u({ action: "updateValues", range: "Usuários!B2:B2", values: row(["Novo"]) }), "ok");
+run("viz cannot rename someone else (row 3)", "viz", u({ action: "updateValues", range: "Usuários!B3:B3", values: row(["Hack"]) }), 403);
+run("viz cannot change own role", "viz", u({ action: "updateValues", range: "Usuários!C2:C2", values: row(["Master"]) }), 403);
+run("viz cannot overwrite own full row as Master", "viz", u({ action: "updateValues", range: "Usuários!A2:C2", values: row(["viz@x.com","Viz","Master"]) }), 403);
+run("viz cannot add users", "viz", u({ action: "updateValues", range: "Usuários!A9:C9", values: row(["evil@x.com","Evil","Master"]) }), 403);
+run("viz cannot create tab", "viz", u({ action: "addTab", title: "Usuários" }), 403);
+
+// --- Editor
+run("edi writes ledger", "edi", u({ action: "updateValues", range: "Lançamento!A5:J5", values: row([1, "a", null, true]) }), "ok");
+run("edi writes Estoque", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(["x"]) }), "ok");
+run("edi cannot write lookup tab Pessoa", "edi", u({ action: "updateValues", range: "Pessoa!A2:D2", values: row(["x"]) }), 403);
+run("edi cannot write unknown tab", "edi", u({ action: "updateValues", range: "Segredos!A1:A1", values: row(["x"]) }), 403);
+run("edi cannot read Usuários", "edi", u({ action: "getValues", range: "Usuários!A2:C" }), 403);
+run("edi cannot add users", "edi", u({ action: "updateValues", range: "Usuários!A9:C9", values: row(["evil@x.com","Evil","Editor"]) }), 403);
+run("edi cannot promote self", "edi", u({ action: "updateValues", range: "Usuários!C3:C3", values: row(["Master"]) }), 403);
+run("edi can rename self (row 3)", "edi", u({ action: "updateValues", range: "Usuários!B3:B3", values: row(["Edi 2"]) }), "ok");
+
+// --- Master
+run("mas reads Usuários", "mas", u({ action: "getValues", range: "Usuários!A2:C" }), "ok");
+run("mas adds a user", "mas", u({ action: "updateValues", range: "Usuários!A9:C9", values: row(["new@x.com","New","Editor"]) }), "ok");
+run("mas changes a role", "mas", u({ action: "updateValues", range: "Usuários!C2:C2", values: row(["Editor"]) }), "ok");
+run("mas writes ledger", "mas", u({ action: "updateValues", range: "Lançamento!A5:J5", values: row(["x"]) }), "ok");
+run("mas still can't touch a tab outside the allowlist", "mas", u({ action: "updateValues", range: "Segredos!A1:A1", values: row(["x"]) }), 403);
+run("mas can't read outside allowlist", "mas", u({ action: "getValues", range: "Segredos!A1:A5" }), 403);
+run("mas can't use another spreadsheet", "mas", { action: "getValues", spreadsheetId: CAR, range: "Estoque!A2:P" }, 403);
+
+// --- Bootstrap (Carolina has no Usuários tab)
+const boot = (who, body) => run("", who, Object.assign({ spreadsheetId: CAR }, body), "ok");
+run("bootstrap: admin sees titles", "admin", { action: "getTitles", spreadsheetId: CAR }, "ok");
+run("bootstrap: stranger cannot see titles", "nobody", { action: "getTitles", spreadsheetId: CAR }, 403);
+run("bootstrap: viz of Ipanema cannot see Carolina titles", "viz", { action: "getTitles", spreadsheetId: CAR }, 403);
+run("bootstrap: admin creates Usuários tab", "admin", { action: "addTab", spreadsheetId: CAR, title: "Usuários" }, "ok");
+run("bootstrap: stranger cannot create tab", "nobody", { action: "addTab", spreadsheetId: CAR, title: "Usuários" }, 403);
+run("bootstrap: cannot create any other tab", "admin", { action: "addTab", spreadsheetId: CAR, title: "Financeiro" }, 403);
+run("bootstrap: admin writes header", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A1:C1", values: row(["Email","Nome","Perfil"]) }, "ok");
+run("bootstrap: header with junk refused", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A1:C1", values: row(["x","y","z"]) }, 403);
+run("bootstrap: admin writes own Master row", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["mccomb.matheus@gmail.com","Matheus","Master"]) }, "ok");
+run("bootstrap: admin cannot enroll someone else", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["evil@x.com","Evil","Master"]) }, 403);
+run("bootstrap: admin cannot write a non-Master row", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["mccomb.matheus@gmail.com","M","Visualizador"]) }, 403);
+run("bootstrap: stranger cannot write a row", "nobody", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: row(["nobody@x.com","N","Master"]) }, 403);
+run("bootstrap: admin can't write ledger before being a Master", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Lançamento!A2:J2", values: row(["x"]) }, 403);
+
+// --- once a company HAS users, bootstrap is closed even for the admin
+(function () {
+  const state = freshState();
+  state[CAR].Usuários = [["Email","Nome","Perfil"], ["other@x.com","Other","Master"]];
+  const r = runOn("bootstrap closed once company has users (admin write own row)", "admin", { action: "updateValues", spreadsheetId: CAR, range: "Usuários!A3:C3", values: row(["mccomb.matheus@gmail.com","M","Master"]) }, 403, state);
+})();
+
+// --- input validation
+run("range with junk refused", "mas", u({ action: "getValues", range: "Estoque!A1:B2;DROP" }), 400);
+run("range without a tab refused", "mas", u({ action: "getValues", range: "A1:B2" }), 400);
+run("non-string range refused", "mas", u({ action: "getValues", range: { a: 1 } }), 400);
+run("huge range string refused", "mas", u({ action: "getValues", range: "Estoque!" + "A".repeat(200) }), 400);
+run("multi-row write refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P6", values: [["a"], ["b"]] }), 400);
+run("object cell refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row([{ f: "=1" }]) }), 400);
+run("overlong cell refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(["x".repeat(3000)]) }), 400);
+run("too many columns refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: row(new Array(30).fill("a")) }), 400);
+run("values not an array refused", "edi", u({ action: "updateValues", range: "Estoque!A5:P5", values: "abc" }), 400);
+
+// --- writes reach the sheet API exactly as sent (RAW, single row), and Usuários cache is invalidated
+(function () {
+  const state = freshState();
+  const deps = makeDeps(state);
+  handleRequest({ token: "mas", action: "updateValues", spreadsheetId: IPA, range: "Lançamento!A5:J5", values: [["=IMPORTXML(\"x\")", 5]] }, deps);
+  const logged = state[IPA].__log && state[IPA].__log[0];
+  results.push((logged && logged[0] === "Lançamento!A5:J5" && logged[1][0][0] === "=IMPORTXML(\"x\")" ? "PASS" : "FAIL") + " formula text is passed through untouched (adapter writes it RAW)");
+  // cache invalidation: add a user, then that user must be recognised on the very next call
+  handleRequest({ token: "mas", action: "getValues", spreadsheetId: IPA, range: "Estoque!A2:P" }, deps); // primes the cache
+  state[IPA].Usuários.push(["nobody@x.com", "Nobody", "Editor"]);
+  handleRequest({ token: "mas", action: "updateValues", spreadsheetId: IPA, range: "Usuários!A10:C10", values: [["nobody@x.com", "Nobody", "Editor"]] }, deps);
+  let seen = "no";
+  try { handleRequest({ token: "nobody", action: "getValues", spreadsheetId: IPA, range: "Estoque!A2:P" }, deps); seen = "yes"; } catch (e) {}
+  results.push((seen === "yes" ? "PASS" : "FAIL") + " Usuários cache is dropped after a write (new user works immediately)");
+})();
+
+
+// --- creating companies from inside the app (only ADMIN_EMAILS)
+const cc = (who, body) => run("", who, Object.assign({ action: "createCompany" }, body), "ok");
+run("viz cannot create a company", "viz", { action: "createCompany", nome: "Nova", ownerEmail: "n@x.com", ownerNome: "N" }, 403);
+run("editor cannot create a company", "edi", { action: "createCompany", nome: "Nova", ownerEmail: "n@x.com", ownerNome: "N" }, 403);
+run("a company Master cannot create a company", "mas", { action: "createCompany", nome: "Nova", ownerEmail: "n@x.com", ownerNome: "N" }, 403);
+run("a stranger cannot create a company", "nobody", { action: "createCompany", nome: "Nova", ownerEmail: "n@x.com", ownerNome: "N" }, 403);
+run("bad e-mail refused", "admin", { action: "createCompany", nome: "Nova", ownerEmail: "not-an-email", ownerNome: "N" }, 400);
+run("empty name refused", "admin", { action: "createCompany", nome: "  ", ownerEmail: "n@x.com", ownerNome: "N" }, 400);
+run("missing owner name refused", "admin", { action: "createCompany", nome: "Nova", ownerEmail: "n@x.com", ownerNome: "" }, 400);
+run("very long name refused", "admin", { action: "createCompany", nome: "x".repeat(200), ownerEmail: "n@x.com", ownerNome: "N" }, 400);
+run("non-string fields refused", "admin", { action: "createCompany", nome: { a: 1 }, ownerEmail: ["x"], ownerNome: 5 }, 400);
+run("a name that already exists (case-insensitive) is refused", "admin", { action: "createCompany", nome: GATEWAY_CONFIG.SPREADSHEETS[IPA].empresa.toUpperCase(), ownerEmail: "n@x.com", ownerNome: "N" }, 400);
+
+(function () {
+  const state = freshState();
+  const step = (who, body) => { const d = makeDeps(state); try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), d) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
+  const made = step("admin", { action: "createCompany", nome: "Empresa Nova", ownerEmail: "Dono@Nova.com", ownerNome: "Dona Nova" });
+  results.push((made.ok && made.data.spreadsheetId === "NEW1" ? "PASS" : "FAIL") + " admin creates a company");
+  results.push((state.__registry.length === 1 && state.__registry[0].empresa === "Empresa Nova" ? "PASS" : "FAIL") + " the new company is recorded in the registry");
+  const usr = state.NEW1["Usuários"];
+  results.push((usr[1][0] === "dono@nova.com" && usr[1][2] === "Master" ? "PASS" : "FAIL") + " the owner is written as Master (e-mail lower-cased)");
+  results.push((usr[2] && usr[2][0] === ADMIN_EMAIL && usr[2][2] === "Master" ? "PASS" : "FAIL") + " the system admin is also added as Master for support");
+  results.push((state.NEW1.Categoria.length > 1 && state.NEW1["Lançamento"][0][0] === "Data" ? "PASS" : "FAIL") + " the new company gets tabs, headers and seed lists");
+
+  TOKENS.dono = "dono@nova.com"; TOKENS.dono2 = "dono2@nova.com";
+  const meDono = step("dono", { action: "me" });
+  results.push((meDono.ok && meDono.data.companies.length === 1 && meDono.data.companies[0].empresa === "Empresa Nova" && meDono.data.companies[0].perfil === "Master" && meDono.data.superAdmin === false ? "PASS" : "FAIL") + " the new owner signs in, sees ONLY the new company, as Master, and is not a super admin");
+  const meAdm = step("admin", { action: "me" });
+  results.push((meAdm.data.superAdmin === true && meAdm.data.companies.some((c) => c.empresa === "Empresa Nova") ? "PASS" : "FAIL") + " the admin sees the new company and is flagged super admin");
+
+  // isolation
+  const r1 = step("dono", { action: "getValues", spreadsheetId: IPA, range: "Estoque!A2:P" });
+  const r2 = step("dono", { action: "updateValues", spreadsheetId: IPA, range: "Estoque!A5:P5", values: [["x"]] });
+  const r3 = step("mas", { action: "getValues", spreadsheetId: "NEW1", range: "Estoque!A2:P" });
+  results.push((!r1.ok && r1.status === 403 && !r2.ok && r2.status === 403 && !r3.ok && r3.status === 403 ? "PASS" : "FAIL") + " companies are isolated: the new owner cannot touch the old ones and vice versa");
+
+  // the owner runs their own company: users + lists
+  const add = step("dono", { action: "updateValues", spreadsheetId: "NEW1", range: "Usuários!A4:C4", values: [["func@nova.com", "Func", "Editor"]] });
+  results.push((add.ok ? "PASS" : "FAIL") + " the new owner (Master) can add people to their own company");
+  TOKENS.func = "func@nova.com";
+  const lookupOwner = step("dono", { action: "updateValues", spreadsheetId: "NEW1", range: "Lojas!A3:C3", values: [[2, "Filial Norte", "2 - Filial Norte"]] });
+  results.push((lookupOwner.ok ? "PASS" : "FAIL") + " a company Master can add an item to a support list (Lojas)");
+  const lookupEditor = step("func", { action: "updateValues", spreadsheetId: "NEW1", range: "Lojas!A4:C4", values: [[3, "X", "3 - X"]] });
+  results.push((!lookupEditor.ok && lookupEditor.status === 403 ? "PASS" : "FAIL") + " an Editor cannot edit the support lists");
+  const lookupCross = step("mas", { action: "updateValues", spreadsheetId: IPA, range: "Pessoa!A9:C9", values: [[9, "Z", "9 - Z"]] });
+  results.push((lookupCross.ok ? "PASS" : "FAIL") + " a Master of another company can edit ITS OWN lists");
+  const lookupCross2 = step("mas", { action: "updateValues", spreadsheetId: "NEW1", range: "Pessoa!A9:C9", values: [[9, "Z", "9 - Z"]] });
+  results.push((!lookupCross2.ok && lookupCross2.status === 403 ? "PASS" : "FAIL") + " …but not another company's lists");
+  const badTab = step("dono", { action: "updateValues", spreadsheetId: "NEW1", range: "Segredos!A1:A1", values: [["x"]] });
+  results.push((!badTab.ok && badTab.status === 403 ? "PASS" : "FAIL") + " tabs outside the allow-list stay refused, even for a Master");
+  const dup = step("admin", { action: "createCompany", nome: "empresa nova", ownerEmail: "x@x.com", ownerNome: "X" });
+  results.push((!dup.ok && dup.status === 400 ? "PASS" : "FAIL") + " a second company with the same name is refused");
+  const noSelf = step("admin", { action: "createCompany", nome: "Terceira", ownerEmail: "t@x.com", ownerNome: "T", incluirMeuAcesso: false });
+  results.push((noSelf.ok && state.NEW2["Usuários"].length === 2 ? "PASS" : "FAIL") + " incluirMeuAcesso=false leaves the admin out of the new company");
+})();
+
+const failed = results.filter((r) => r.indexOf("FAIL") === 0);
+document.getElementById("out").textContent = results.join("\n") + "\n\nTOTAL " + results.length + "  FAILED " + failed.length;
+</script></body></html>

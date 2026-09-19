@@ -35,6 +35,33 @@ const GATEWAY_CONFIG = {
 };
 
 const USUARIOS_TAB = "Usuários";
+const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
+const MAX_COMPANIES = 200;
+const REGISTRY_PROP = "REGISTRY_SPREADSHEET_ID";
+const REGISTRY_TITLE = "FinanGold — Registro de empresas";
+
+// Structure of every company created from inside the app. A new company starts
+// with just enough seed rows in the lists for the forms to be usable; its Master
+// edits the lists later (Ajustes → Listas de apoio).
+const LOOKUP_HEADERS = ["Código", "Nome", "Complemento"];
+function seedRow_(n, nome, extra) {
+  const row = [n, nome, n + " - " + nome];
+  if (extra) row.push(extra);
+  return row;
+}
+const COMPANY_TEMPLATE = [
+  { name: "Lançamento", dateCols: [0], headers: ["Data", "Loja", "Conta", "Empresa", "Categoria", "Valor", "Tipo", "Peso (g)", "Pessoa", "Observação"], seeds: () => [] },
+  { name: "Estoque", dateCols: [9, 10], headers: ["Produto", "Tipo", "Marca", "Condição", "Estado", "Peso em grama", "Pureza (k)", "Valor de Custo", "Valor de venda", "Data de Compra", "Data de Venda", "Comprador", "Vendedor", "Loja", "Vendido?", "Observação"], seeds: () => [] },
+  { name: "Lojas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Loja principal")] },
+  { name: "Contas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Caixa"), seedRow_(2, "Banco")] },
+  { name: "Empresas", headers: LOOKUP_HEADERS, seeds: (empresa) => [seedRow_(1, empresa)] },
+  { name: "Categoria", headers: LOOKUP_HEADERS.concat(["Status"]), seeds: () => ["Vendas", "Compras", "Despesas fixas", "Salários", "Impostos", "Outros"].map((n, i) => seedRow_(i + 1, n, "Ativo")) },
+  { name: "Pessoa", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Geral")] },
+  { name: "Produto", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Produto geral")] },
+  { name: "Tipo de Produto", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Geral")] },
+  { name: "Marcas", headers: LOOKUP_HEADERS, seeds: () => [seedRow_(1, "Sem marca")] },
+  { name: "Usuários", headers: ["Email", "Nome", "Perfil"], seeds: () => [] },
+];
 const READ_TABS = ["Estoque", "Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
 const WRITE_TABS = ["Estoque"]; // plus the company's own ledger tab (sheetName)
 const ROLE_VISUALIZADOR = "Visualizador";
@@ -101,7 +128,38 @@ function realDeps_() {
         lock.releaseLock();
       }
     },
+    registry: registryDeps_(cache),
     sheets: {
+      // Creates the spreadsheet (owned by whoever deployed this script) with
+      // every tab, header and seed row of COMPANY_TEMPLATE. Returns its id.
+      createCompanySpreadsheet: (title, empresaNome) => {
+        const created = Sheets.Spreadsheets.create({
+          properties: { title: title },
+          sheets: COMPANY_TEMPLATE.map((t) => ({ properties: { title: t.name } })),
+        });
+        const id = created.spreadsheetId;
+        Sheets.Spreadsheets.Values.batchUpdate(
+          {
+            valueInputOption: "RAW",
+            data: COMPANY_TEMPLATE.map((t) => ({ range: t.name + "!A1", values: [t.headers].concat(t.seeds(empresaNome)) })),
+          },
+          id
+        );
+        const requests = [];
+        created.sheets.forEach((sheet, i) => {
+          (COMPANY_TEMPLATE[i].dateCols || []).forEach((col) => {
+            requests.push({
+              repeatCell: {
+                range: { sheetId: sheet.properties.sheetId, startRowIndex: 1, startColumnIndex: col, endColumnIndex: col + 1 },
+                cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/MM/yyyy" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            });
+          });
+        });
+        if (requests.length) Sheets.Spreadsheets.batchUpdate({ requests: requests }, id);
+        return id;
+      },
       getTitles: (id) => {
         const data = Sheets.Spreadsheets.get(id, { fields: "sheets.properties.title" });
         return (data.sheets || []).map((s) => s.properties.title);
@@ -119,6 +177,48 @@ function realDeps_() {
       addTab: (id, title) => {
         Sheets.Spreadsheets.batchUpdate({ requests: [{ addSheet: { properties: { title: title } } }] }, id);
       },
+    },
+  };
+}
+
+// Companies created from inside the app live in a small registry spreadsheet
+// (its id is kept in the script's properties, created on first use).
+function registryDeps_(cache) {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    list: () => {
+      const cached = cache.get("reg_list");
+      if (cached) return JSON.parse(cached);
+      const id = props.getProperty(REGISTRY_PROP);
+      const out = [];
+      if (id) {
+        const data = Sheets.Spreadsheets.Values.get(id, "Empresas!A2:E", { valueRenderOption: "UNFORMATTED_VALUE" });
+        (data.values || []).forEach((row) => {
+          if (row[0] && String(row[4] || "Sim") !== "Não") {
+            out.push({ spreadsheetId: String(row[0]), empresa: String(row[1] || ""), sheetName: "Lançamento" });
+          }
+        });
+      }
+      cache.put("reg_list", JSON.stringify(out), 60);
+      return out;
+    },
+    add: (entry) => {
+      let id = props.getProperty(REGISTRY_PROP);
+      if (!id) {
+        const created = Sheets.Spreadsheets.create({ properties: { title: REGISTRY_TITLE }, sheets: [{ properties: { title: "Empresas" } }] });
+        id = created.spreadsheetId;
+        Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa"]] }, id, "Empresas!A1:E1", { valueInputOption: "RAW" });
+        props.setProperty(REGISTRY_PROP, id);
+      }
+      const existing = Sheets.Spreadsheets.Values.get(id, "Empresas!A2:A");
+      const next = (existing.values || []).length + 2;
+      Sheets.Spreadsheets.Values.update(
+        { values: [[entry.spreadsheetId, entry.empresa, new Date().toISOString(), entry.criadaPor, "Sim"]] },
+        id,
+        "Empresas!A" + next + ":E" + next,
+        { valueInputOption: "RAW" }
+      );
+      cache.remove("reg_list");
     },
   };
 }
@@ -163,14 +263,29 @@ function verifyGoogleToken_(token) {
 // Request handling — pure logic over injected dependencies (unit-testable)
 // ---------------------------------------------------------------------------
 
+// Every company the gateway knows: the ones fixed in GATEWAY_CONFIG plus the
+// ones created from inside the app (registry).
+function companyMap_(deps) {
+  const map = {};
+  Object.keys(deps.config.SPREADSHEETS).forEach((id) => {
+    map[id] = deps.config.SPREADSHEETS[id];
+  });
+  const registered = deps.registry ? deps.registry.list() : [];
+  registered.forEach((entry) => {
+    if (!map[entry.spreadsheetId]) map[entry.spreadsheetId] = { empresa: entry.empresa, sheetName: entry.sheetName || "Lançamento" };
+  });
+  return map;
+}
+
 function handleRequest(body, deps) {
   if (!body || typeof body !== "object") throw new GatewayError_(400, "Requisição inválida.");
   const email = deps.verifyToken(body.token);
   const action = body.action;
 
   if (action === "me") return actionMe_(deps, email);
+  if (action === "createCompany") return actionCreateCompany_(deps, email, body);
 
-  const spreadsheet = deps.config.SPREADSHEETS[body.spreadsheetId];
+  const spreadsheet = companyMap_(deps)[body.spreadsheetId];
   if (!spreadsheet) throw new GatewayError_(403, "Empresa não permitida.");
   const access = getAccess_(deps, email, body.spreadsheetId);
 
@@ -202,14 +317,20 @@ function isAdminEmail_(deps, email) {
 }
 
 // Reads a company's Usuários tab (short cache). null = the tab doesn't exist.
+// A single read: asking for a tab that isn't there makes the Sheets API fail,
+// which is exactly the "missing" answer (this runs once per company on every
+// sign-in, so the extra "list the tabs" call it replaced was costly).
 function loadUsuarios_(deps, spreadsheetId) {
   const cacheKey = "usr_" + spreadsheetId;
   const cached = deps.cache.get(cacheKey);
   if (cached) return JSON.parse(cached);
 
-  const titles = deps.sheets.getTitles(spreadsheetId);
-  if (titles.indexOf(USUARIOS_TAB) === -1) return null;
-  const rows = deps.sheets.getValues(spreadsheetId, USUARIOS_TAB + "!A2:C", "UNFORMATTED_VALUE");
+  let rows;
+  try {
+    rows = deps.sheets.getValues(spreadsheetId, USUARIOS_TAB + "!A2:C", "UNFORMATTED_VALUE");
+  } catch (err) {
+    return null;
+  }
   const usuarios = [];
   rows.forEach((row, index) => {
     if (typeof row[0] !== "string" || !row[0].trim()) return;
@@ -239,8 +360,9 @@ function getAccess_(deps, email, spreadsheetId) {
 function actionMe_(deps, email) {
   const companies = [];
   const bootstrap = [];
-  Object.keys(deps.config.SPREADSHEETS).forEach((spreadsheetId) => {
-    const info = deps.config.SPREADSHEETS[spreadsheetId];
+  const known = companyMap_(deps);
+  Object.keys(known).forEach((spreadsheetId) => {
+    const info = known[spreadsheetId];
     let access;
     try {
       access = getAccess_(deps, email, spreadsheetId);
@@ -260,7 +382,39 @@ function actionMe_(deps, email) {
       bootstrap.push({ spreadsheetId: spreadsheetId, empresa: info.empresa, sheetName: info.sheetName });
     }
   });
-  return { companies: companies, bootstrap: bootstrap };
+  return { companies: companies, bootstrap: bootstrap, superAdmin: isAdminEmail_(deps, email) };
+}
+
+// Only the system administrators (ADMIN_EMAILS) can create a company. The new
+// spreadsheet is created by this script, so it belongs to the account that
+// deployed it; nobody needs it shared in Drive.
+function actionCreateCompany_(deps, email, body) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const nome = typeof body.nome === "string" ? body.nome.trim() : "";
+  const ownerEmail = typeof body.ownerEmail === "string" ? body.ownerEmail.trim().toLowerCase() : "";
+  const ownerNome = typeof body.ownerNome === "string" ? body.ownerNome.trim() : "";
+  if (!nome || nome.length > 80) throw new GatewayError_(400, "Informe o nome da empresa (até 80 letras).");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail) || ownerEmail.length > 120) throw new GatewayError_(400, "Informe um e-mail válido para o administrador da empresa.");
+  if (!ownerNome || ownerNome.length > 80) throw new GatewayError_(400, "Informe o nome do administrador da empresa.");
+
+  const known = companyMap_(deps);
+  const ids = Object.keys(known);
+  if (ids.length >= MAX_COMPANIES) throw new GatewayError_(400, "Limite de empresas atingido.");
+  if (ids.some((id) => String(known[id].empresa).trim().toLowerCase() === nome.toLowerCase())) {
+    throw new GatewayError_(400, "Já existe uma empresa com esse nome.");
+  }
+
+  return deps.lock(() => {
+    const spreadsheetId = deps.sheets.createCompanySpreadsheet(nome + " — FinanGold", nome);
+    const rows = [[ownerEmail, ownerNome, ROLE_MASTER]];
+    if (body.incluirMeuAcesso !== false && email !== ownerEmail) rows.push([email, "Administrador do sistema", ROLE_MASTER]);
+    rows.forEach((row, i) => {
+      deps.sheets.updateValues(spreadsheetId, USUARIOS_TAB + "!A" + (i + 2) + ":C" + (i + 2), [row]);
+    });
+    deps.registry.add({ spreadsheetId: spreadsheetId, empresa: nome, criadaPor: email });
+    deps.cache.remove("usr_" + spreadsheetId);
+    return { spreadsheetId: spreadsheetId, empresa: nome, sheetName: "Lançamento" };
+  });
 }
 
 // "Tab!A2:J" or "'Tipo de Produto'!A2:D" -> { tab, cells }. Anything else is refused.
@@ -308,8 +462,14 @@ function actionUpdateValues_(deps, email, access, spreadsheet, body) {
   if (parsed.tab === USUARIOS_TAB) {
     if (!canWriteUsuarios_(access, email, parsed, row)) throw denied_();
   } else {
+    const isLookup = LOOKUP_TABS.indexOf(parsed.tab) !== -1;
     const writable = WRITE_TABS.indexOf(parsed.tab) !== -1 || parsed.tab === spreadsheet.sheetName;
-    if (!writable || !canEdit) throw denied_();
+    // The support lists (lojas, contas, categorias...) are edited by the company's Master only.
+    if (isLookup) {
+      if (access.perfil !== ROLE_MASTER) throw denied_();
+    } else if (!writable || !canEdit) {
+      throw denied_();
+    }
   }
 
   return deps.lock(() => {

@@ -44,3 +44,12 @@ implantações → (lápis) → Versão: Nova versão → Implantar**. O URL con
 
 Inclua o ID da planilha em `SPREADSHEETS` no `Code.gs` (e nova versão, como acima).
 O servidor só toca nas planilhas listadas ali.
+
+## Empresas criadas de dentro do app
+
+O administrador do sistema (os e-mails em `ADMIN_EMAILS`, no `Code.gs`) cria empresas novas em **Ajustes → Empresas**, sem mexer em código. O servidor cria uma planilha nova (com todas as abas e listas iniciais) na conta que implantou este script, cadastra o administrador da empresa como Master e registra a empresa em uma planilha chamada "Registro de empresas" (criada sozinha na primeira vez; o ID dela fica nas propriedades do script).
+
+- As empresas que já estão em `SPREADSHEETS` continuam funcionando; as criadas pelo app são somadas a elas.
+- Depois de colar um `Code.gs` novo, crie uma **nova versão** da implantação (**Implantar → Gerenciar implantações → lápis → Nova versão**).
+- As planilhas das empresas novas pertencem à conta que implantou o script. Cada empresa só enxerga a sua; as regras estão em `apps-script/testes/permissoes.html` (todos devem dar PASS).
+- Limite prático: o servidor confere a lista de usuários de cada empresa a cada login. Até umas 20 empresas o login continua rápido; acima disso vale criar um índice de acessos.

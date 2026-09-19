@@ -15,6 +15,7 @@ const sidebarEmpresa = document.getElementById("sidebar-empresa");
 const topbarEmpresa = document.getElementById("topbar-empresa");
 
 let currentEmail = null;
+let currentIsSuperAdmin = false;
 let currentCompanies = [];
 let currentUserLinha = null;
 let ajustesHandlersReady = false;
@@ -368,6 +369,15 @@ async function startApp(token, nome, perfil, linha) {
   document.getElementById("ajustes-conta-empresa").textContent = sidebarEmpresa.textContent;
   document.getElementById("ajustes-trocar-empresa-card").hidden = currentCompanies.length <= 1;
   document.getElementById("ajustes-usuarios-section").hidden = !isMaster(perfil);
+  // Creating companies and editing the lists need the gateway (direct mode has
+  // no registry); the company's Master edits lists, only system admins create companies.
+  const gatewayMode = Boolean(CONFIG.GATEWAY_URL);
+  document.getElementById("ajustes-listas-section").hidden = !(gatewayMode && isMaster(perfil));
+  document.getElementById("ajustes-empresas-section").hidden = !(gatewayMode && currentIsSuperAdmin);
+  if (gatewayMode && currentIsSuperAdmin) {
+    setupEmpresasAdmin();
+    renderEmpresasAdminList();
+  }
 
   statusMessage.textContent = "Carregando dados...";
 
@@ -408,6 +418,8 @@ async function startApp(token, nome, perfil, linha) {
     errors.push(`Estoque: ${estoqueResult.reason.message}`);
   }
 
+  if (gatewayMode && isMaster(perfil)) initListasAdmin();
+
   if (isMaster(perfil)) {
     try {
       initUsuariosAdmin(await fetchAllUsuarios(token));
@@ -437,16 +449,39 @@ async function startApp(token, nome, perfil, linha) {
 // lists it. The second half is what makes "Master adds someone in Ajustes"
 // enough on its own. Drive sharing is still the real gate: without access to a
 // spreadsheet the Sheets API refuses the read and that company is skipped.
+function companiesFromMe(me) {
+  return me.companies.concat(me.bootstrap).map((c) => ({
+    empresa: c.empresa,
+    spreadsheetId: c.spreadsheetId,
+    sheetName: c.sheetName,
+  }));
+}
+
+// After a company is created from Ajustes: re-ask the gateway which companies
+// this account can now open, so "Trocar de empresa" lists the new one.
+async function refreshCompaniesList() {
+  const me = await gatewayCall("me", {}, accessToken);
+  currentIsSuperAdmin = Boolean(me.superAdmin);
+  currentCompanies = companiesFromMe(me);
+  document.getElementById("ajustes-trocar-empresa-card").hidden = currentCompanies.length <= 1;
+}
+
+// Re-reads the support lists (lojas, contas...) after Ajustes → Listas de apoio
+// changed them, so the dropdowns in the forms show the new items right away.
+async function refreshLookupsOnly() {
+  const lookups = await fetchAllLookups(accessToken);
+  populateLookupSelects(lookups);
+  populateEstoqueFormSelects(lookups);
+  estoqueLookups = lookups;
+}
+
 async function resolveCompaniesForEmail(email, token) {
   if (CONFIG.GATEWAY_URL) {
     // The gateway is the source of truth: it returns the companies whose
     // Usuários tab lists this email, plus any it may set up for the first time.
     const me = await gatewayCall("me", {}, token);
-    return me.companies.concat(me.bootstrap).map((c) => ({
-      empresa: c.empresa,
-      spreadsheetId: c.spreadsheetId,
-      sheetName: c.sheetName,
-    }));
+    currentIsSuperAdmin = Boolean(me.superAdmin);
+    return companiesFromMe(me);
   }
   const found = (lookupTenants(email) || []).slice();
   const knownIds = new Set(found.map((c) => c.spreadsheetId));

@@ -452,6 +452,33 @@
           </div>
         </section>
 
+        <section class="card" id="ajustes-empresas-section" hidden>
+          <h2>Empresas</h2>
+          <p class="field-hint">Crie uma empresa nova para outro empresário usar o app. Ele entra com a conta Google dele e vê apenas a empresa dele.</p>
+          <ul id="empresas-admin-lista" class="lista-simples"></ul>
+          <form id="empresa-add-form" class="lancamento-form">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="empresa-add-nome">Nome da empresa</label>
+                <input type="text" id="empresa-add-nome" maxlength="80" required>
+              </div>
+              <div class="form-field">
+                <label for="empresa-add-email">E-mail Google do administrador</label>
+                <input type="email" id="empresa-add-email" required>
+              </div>
+              <div class="form-field">
+                <label for="empresa-add-dono">Nome do administrador</label>
+                <input type="text" id="empresa-add-dono" maxlength="80" required>
+              </div>
+            </div>
+            <label class="check-line"><input type="checkbox" id="empresa-add-meu-acesso" checked> Manter o meu acesso a essa empresa (para dar suporte)</label>
+            <div class="form-actions">
+              <button type="submit" id="btn-empresa-add">Criar empresa</button>
+              <span id="empresa-add-status" class="status-message"></span>
+            </div>
+          </form>
+        </section>
+
         <div id="ajustes-usuarios-section" hidden>
           <section class="card">
             <h2>Adicionar usuário</h2>
@@ -499,6 +526,21 @@
             </div>
             <p id="usuarios-admin-status" class="status-message"></p>
           </section>
+
+          <section class="card" id="ajustes-listas-section">
+            <h2>Listas de apoio</h2>
+            <p class="field-hint">São as opções que aparecem nos formulários (lojas, contas, categorias, pessoas...). Adicione aqui o que a sua empresa usa.</p>
+            <div class="form-field listas-escolha">
+              <label for="listas-select">Lista</label>
+              <select id="listas-select"></select>
+            </div>
+            <ul id="listas-itens" class="lista-simples"></ul>
+            <form id="listas-add-form" class="listas-add">
+              <input type="text" id="listas-add-nome" maxlength="80" placeholder="Nome do novo item" aria-label="Nome do novo item">
+              <button type="submit" class="usuario-action-btn usuario-action-primary">Adicionar</button>
+            </form>
+            <p id="listas-admin-status" class="status-message"></p>
+          </section>
         </div>
       </section>
     </main>
@@ -526,6 +568,8 @@
 <script src="js/roles.js"></script>
 <script src="js/usuarios.js"></script>
 <script src="js/usuarios-admin.js"></script>
+<script src="js/listas-admin.js"></script>
+<script src="js/empresas-admin.js"></script>
 <script src="js/art.js"></script>
 <script src="js/dashboard-data.js"></script>
 <script src="js/charts.js"></script>
