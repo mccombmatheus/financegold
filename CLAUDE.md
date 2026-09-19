@@ -148,6 +148,16 @@ Adding a company used to mean editing `SPREADSHEETS` in `apps-script/Code.gs` an
 - Both sections are hidden unless `CONFIG.GATEWAY_URL` is set (direct mode has no registry). Tests: `apps-script/testes/permissoes.html` (89 cases now, incl. only-admin-creates, isolation between companies, Master-only lists) and a UI run with a mocked gateway (19 cases: list add/remove/duplicate/Categoria status, company form).
 - A company created this way is **not** in `js/tenants.js` (direct-mode routing only) — that file is irrelevant in gateway mode.
 
+### Access requests (asking for access from the login flow)
+
+A person who signs in with a Google account that has no company used to hit a dead end ("peça ao administrador"). With the gateway on they now land on `#solicitar-acesso-screen` (`js/solicitar-acesso.js`, shown by `handleSignedIn` when `resolveCompaniesForEmail` is empty; the session is deliberately kept so they can send the request):
+
+- **Sending**: `requestAccess` (any verified Google account) → row in the registry spreadsheet's `Solicitações` tab (created on first use; columns Data, E-mail, Nome, Empresa, Tipo, Mensagem, Status, Nota) + a plain-text **e-mail to `ADMIN_EMAILS`** via `MailApp` (best effort — the request is saved first, so a mail failure loses nothing). The e-mail is the verified token e-mail, never one typed by the person. Abuse limits live in `actionRequestAccess_`: one pending request per e-mail (a repeat returns `duplicate: true`), a 60 s cool-down (429), a cap of `MAX_PENDING_REQUESTS`, lengths cut to 80/80/500, control characters stripped and no line breaks in short fields (mail-header injection); values reach the sheet via RAW writes so a `=formula` stays text.
+- **State back to the person**: `me` returns `pedido` (`Pendente`/`Atendida`/`Recusada`) only when they have no company, so the screen shows "em análise" instead of a blank form.
+- **Answering (system admin only)**: `listRequests`/`resolveRequest` are `ADMIN_EMAILS`-only (a company Master cannot). Ajustes → Empresas → **Pedidos de acesso** (`loadPedidosAdmin` in `js/empresas-admin.js`, badge on the Ajustes nav item) offers *Criar empresa* (pre-fills the create form and marks the request handled after success), *Adicionar a uma empresa* (`addUsuarioTo` in `js/usuarios.js`, only companies where the admin is Master), and *Recusar* (two steps). Resolving e-mails the requester unless `avisar: false`. `resolveRequest` only records the outcome; the actual grant uses the existing separately-checked actions.
+- **Manifest**: sending mail needs the `script.send_mail` scope in `appsscript.json`; after pasting the new `Code.gs` + manifest the owner must re-authorize when creating the new deployment version. Mail quota: ~100 recipients/day on a free account.
+- Tests: `permissoes.html` (112 cases, incl. spam/duplicate/injection/who-may-list) and the mocked-gateway UI run (41 cases).
+
 ### Running locally
 
 Serve the directory over HTTP (Google OAuth does not work reliably over `file://`):

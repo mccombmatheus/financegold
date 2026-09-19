@@ -32,11 +32,18 @@ const GATEWAY_CONFIG = {
   // May set up a company whose Usuários tab is missing or empty (becoming its
   // first Master). Everyone else must be added by an existing Master.
   ADMIN_EMAILS: ["mccomb.matheus@gmail.com"],
+
+  // Where people are sent in the e-mails about access requests.
+  APP_URL: "https://mccombmatheus.github.io/financegold/",
 };
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
 const MAX_COMPANIES = 200;
+const REQUESTS_TAB = "Solicitações";
+const REQUEST_HEADERS = ["Data", "E-mail", "Nome", "Empresa", "Tipo", "Mensagem", "Status", "Nota"];
+const MAX_PENDING_REQUESTS = 300;
+const REQUEST_TYPES = ["nova", "existente"];
 const REGISTRY_PROP = "REGISTRY_SPREADSHEET_ID";
 const REGISTRY_TITLE = "FinanGold — Registro de empresas";
 
@@ -129,6 +136,11 @@ function realDeps_() {
       }
     },
     registry: registryDeps_(cache),
+    requests: requestsDeps_(),
+    mail: {
+      // Plain text only, addressed to fixed recipients or to the requester.
+      send: (msg) => MailApp.sendEmail({ to: msg.to, subject: msg.subject, body: msg.body, name: "FinanGold" }),
+    },
     sheets: {
       // Creates the spreadsheet (owned by whoever deployed this script) with
       // every tab, header and seed row of COMPANY_TEMPLATE. Returns its id.
@@ -223,6 +235,68 @@ function registryDeps_(cache) {
   };
 }
 
+// Access requests live in the registry spreadsheet, tab "Solicitações"
+// (created on first use). Columns: Data, E-mail, Nome, Empresa, Tipo,
+// Mensagem, Status (Pendente/Atendida/Recusada), Nota.
+function requestsDeps_() {
+  const props = PropertiesService.getScriptProperties();
+
+  function registryId_() {
+    let id = props.getProperty(REGISTRY_PROP);
+    if (!id) {
+      const created = Sheets.Spreadsheets.create({ properties: { title: REGISTRY_TITLE }, sheets: [{ properties: { title: "Empresas" } }] });
+      id = created.spreadsheetId;
+      Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa"]] }, id, "Empresas!A1:E1", { valueInputOption: "RAW" });
+      props.setProperty(REGISTRY_PROP, id);
+    }
+    const titles = (Sheets.Spreadsheets.get(id, { fields: "sheets.properties.title" }).sheets || []).map((x) => x.properties.title);
+    if (titles.indexOf(REQUESTS_TAB) === -1) {
+      Sheets.Spreadsheets.batchUpdate({ requests: [{ addSheet: { properties: { title: REQUESTS_TAB } } }] }, id);
+      Sheets.Spreadsheets.Values.update({ values: [REQUEST_HEADERS] }, id, REQUESTS_TAB + "!A1:H1", { valueInputOption: "RAW" });
+    }
+    return id;
+  }
+
+  return {
+    list: () => {
+      if (!props.getProperty(REGISTRY_PROP)) return [];
+      const id = registryId_();
+      const data = Sheets.Spreadsheets.Values.get(id, REQUESTS_TAB + "!A2:H", { valueRenderOption: "UNFORMATTED_VALUE" });
+      const out = [];
+      (data.values || []).forEach((row, index) => {
+        if (!row[1]) return;
+        out.push({
+          linha: index + 2,
+          data: String(row[0] || ""),
+          email: String(row[1]).trim().toLowerCase(),
+          nome: String(row[2] || ""),
+          empresa: String(row[3] || ""),
+          tipo: String(row[4] || ""),
+          mensagem: String(row[5] || ""),
+          status: String(row[6] || "Pendente"),
+          nota: String(row[7] || ""),
+        });
+      });
+      return out;
+    },
+    add: (r) => {
+      const id = registryId_();
+      const existing = Sheets.Spreadsheets.Values.get(id, REQUESTS_TAB + "!A2:A");
+      const next = (existing.values || []).length + 2;
+      Sheets.Spreadsheets.Values.update(
+        { values: [[new Date().toISOString(), r.email, r.nome, r.empresa, r.tipo, r.mensagem, "Pendente", ""]] },
+        id,
+        REQUESTS_TAB + "!A" + next + ":H" + next,
+        { valueInputOption: "RAW" }
+      );
+    },
+    setStatus: (linha, status, nota) => {
+      const id = registryId_();
+      Sheets.Spreadsheets.Values.update({ values: [[status, nota]] }, id, REQUESTS_TAB + "!G" + linha + ":H" + linha, { valueInputOption: "RAW" });
+    },
+  };
+}
+
 function sha256Hex_(text) {
   const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8);
   return bytes
@@ -284,6 +358,9 @@ function handleRequest(body, deps) {
 
   if (action === "me") return actionMe_(deps, email);
   if (action === "createCompany") return actionCreateCompany_(deps, email, body);
+  if (action === "requestAccess") return actionRequestAccess_(deps, email, body);
+  if (action === "listRequests") return actionListRequests_(deps, email);
+  if (action === "resolveRequest") return actionResolveRequest_(deps, email, body);
 
   const spreadsheet = companyMap_(deps)[body.spreadsheetId];
   if (!spreadsheet) throw new GatewayError_(403, "Empresa não permitida.");
@@ -382,7 +459,13 @@ function actionMe_(deps, email) {
       bootstrap.push({ spreadsheetId: spreadsheetId, empresa: info.empresa, sheetName: info.sheetName });
     }
   });
-  return { companies: companies, bootstrap: bootstrap, superAdmin: isAdminEmail_(deps, email) };
+  const result = { companies: companies, bootstrap: bootstrap, superAdmin: isAdminEmail_(deps, email) };
+  if (companies.length === 0 && bootstrap.length === 0 && deps.requests) {
+    const mine = deps.requests.list().filter((r) => r.email === email);
+    const last = mine[mine.length - 1];
+    if (last) result.pedido = { status: last.status, empresa: last.empresa, data: last.data };
+  }
+  return result;
 }
 
 // Only the system administrators (ADMIN_EMAILS) can create a company. The new
@@ -414,6 +497,104 @@ function actionCreateCompany_(deps, email, body) {
     deps.registry.add({ spreadsheetId: spreadsheetId, empresa: nome, criadaPor: email });
     deps.cache.remove("usr_" + spreadsheetId);
     return { spreadsheetId: spreadsheetId, empresa: nome, sheetName: "Lançamento" };
+  });
+}
+
+// Text typed by a stranger ends up in a spreadsheet and in an e-mail: keep it
+// plain (no control characters, no line breaks in short fields).
+function cleanText_(value, max, allowNewlines) {
+  if (typeof value !== "string") return "";
+  let v = value.replace(allowNewlines ? /[\u0000-\u0009\u000b\u000c\u000e-\u001f]/g : /[\u0000-\u001f]/g, " ");
+  v = v.trim();
+  return v.length > max ? v.slice(0, max) : v;
+}
+
+// Anyone with a verified Google account may ask for access — that is the whole
+// point — so this is deliberately limited: one pending request per e-mail, a
+// per-address cool-down, a cap on the pending pile, and short plain-text fields.
+function actionRequestAccess_(deps, email, body) {
+  if (!deps.requests) throw new GatewayError_(400, "Ação indisponível.");
+  const nome = cleanText_(body.nome, 80, false);
+  const empresa = cleanText_(body.empresa, 80, false);
+  const mensagem = cleanText_(body.mensagem, 500, true);
+  const tipo = REQUEST_TYPES.indexOf(body.tipo) !== -1 ? body.tipo : "";
+  if (!nome) throw new GatewayError_(400, "Informe o seu nome.");
+  if (!empresa) throw new GatewayError_(400, "Informe o nome da empresa.");
+  if (!tipo) throw new GatewayError_(400, "Escolha o tipo de pedido.");
+
+  const cooldownKey = "reqcool_" + email;
+  if (deps.cache.get(cooldownKey)) throw new GatewayError_(429, "Aguarde um minuto antes de enviar outro pedido.");
+
+  return deps.lock(() => {
+    const all = deps.requests.list();
+    if (all.some((r) => r.email === email && r.status === "Pendente")) return { duplicate: true };
+    if (all.filter((r) => r.status === "Pendente").length >= MAX_PENDING_REQUESTS) {
+      throw new GatewayError_(503, "Muitos pedidos em análise. Tente mais tarde.");
+    }
+    deps.requests.add({ email: email, nome: nome, empresa: empresa, tipo: tipo, mensagem: mensagem });
+    deps.cache.put(cooldownKey, "1", 60);
+
+    // Best effort: a mail problem must never lose the request (it is saved above).
+    try {
+      deps.mail.send({
+        to: deps.config.ADMIN_EMAILS.join(","),
+        subject: "FinanGold: pedido de acesso de " + nome,
+        body:
+          "Novo pedido de acesso ao FinanGold.\n\n" +
+          "Nome: " + nome + "\n" +
+          "E-mail: " + email + "\n" +
+          "Empresa: " + empresa + "\n" +
+          "Tipo: " + (tipo === "nova" ? "quer usar o FinanGold na própria empresa" : "trabalha em uma empresa que já usa") + "\n" +
+          "Mensagem: " + (mensagem || "(sem mensagem)") + "\n\n" +
+          "Para responder, entre em " + deps.config.APP_URL + " e abra Ajustes > Empresas > Pedidos de acesso.",
+      });
+    } catch (err) {
+      console.error(err);
+    }
+    return { duplicate: false };
+  });
+}
+
+function actionListRequests_(deps, email) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const all = deps.requests ? deps.requests.list() : [];
+  const pendentes = all.filter((r) => r.status === "Pendente");
+  const recentes = all.filter((r) => r.status !== "Pendente").slice(-20);
+  return { pendentes: pendentes, recentes: recentes };
+}
+
+// The administrator marks a request as handled (approved or declined). The
+// actual granting (creating the company / adding the person) uses the existing,
+// separately-checked actions; this only records the outcome and, unless told
+// not to, e-mails the requester.
+function actionResolveRequest_(deps, email, body) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const linha = Number(body.linha);
+  const status = body.status;
+  if (!Number.isInteger(linha) || linha < 2) throw new GatewayError_(400, "Pedido inválido.");
+  if (status !== "Atendida" && status !== "Recusada") throw new GatewayError_(400, "Situação inválida.");
+  const nota = cleanText_(body.nota, 200, false);
+
+  return deps.lock(() => {
+    const pedido = deps.requests.list().filter((r) => r.linha === linha)[0];
+    if (!pedido) throw new GatewayError_(400, "Pedido não encontrado.");
+    if (pedido.status !== "Pendente") throw new GatewayError_(400, "Esse pedido já foi respondido.");
+    deps.requests.setStatus(linha, status, nota);
+    if (body.avisar !== false) {
+      try {
+        deps.mail.send({
+          to: pedido.email,
+          subject: status === "Atendida" ? "FinanGold: seu acesso foi liberado" : "FinanGold: sobre o seu pedido de acesso",
+          body:
+            status === "Atendida"
+              ? "Olá, " + pedido.nome + ".\n\nSeu acesso ao FinanGold foi liberado. Entre com esta mesma conta Google (" + pedido.email + ") em " + deps.config.APP_URL + "\n"
+              : "Olá, " + pedido.nome + ".\n\nNão foi possível liberar o seu acesso ao FinanGold agora." + (nota ? "\n\n" + nota : "") + "\n",
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+    return { resolved: true };
   });
 }
 

@@ -53,3 +53,12 @@ O administrador do sistema (os e-mails em `ADMIN_EMAILS`, no `Code.gs`) cria emp
 - Depois de colar um `Code.gs` novo, crie uma **nova versão** da implantação (**Implantar → Gerenciar implantações → lápis → Nova versão**).
 - As planilhas das empresas novas pertencem à conta que implantou o script. Cada empresa só enxerga a sua; as regras estão em `apps-script/testes/permissoes.html` (todos devem dar PASS).
 - Limite prático: o servidor confere a lista de usuários de cada empresa a cada login. Até umas 20 empresas o login continua rápido; acima disso vale criar um índice de acessos.
+
+## Pedidos de acesso
+
+Quem entra com uma conta Google que ainda não tem acesso vê um formulário para **pedir acesso** (nome, empresa, mensagem). O servidor guarda o pedido na planilha "Registro de empresas" (aba "Solicitações") e **manda um e-mail** para os `ADMIN_EMAILS`. O administrador responde em **Ajustes → Empresas → Pedidos de acesso** (criar a empresa, adicionar a uma empresa que já existe, ou recusar); quem pediu recebe um e-mail com a resposta.
+
+- Enviar e-mail exige uma permissão nova (`script.send_mail`, já no `appsscript.json`). Ao colar o `Code.gs` **e** o `appsscript.json` novos e criar a nova versão, o Google pede para você **autorizar** de novo: **Autorizar acesso → escolha a conta → Avançado → Acessar → Permitir**.
+- Se o e-mail falhar, o pedido continua salvo e aparece na lista do app.
+- Limites contra abuso: um pedido em análise por e-mail, um minuto entre tentativas, textos curtos e sem quebras de linha nos campos curtos, no máximo 300 pedidos pendentes. O envio de e-mails tem limite diário do Google (cerca de 100 destinatários por dia em conta gratuita).
+- Ajuste `APP_URL` no `Code.gs` se o endereço do app mudar (ele vai nos e-mails).

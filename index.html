@@ -89,6 +89,31 @@
   </div>
 </div>
 
+<div id="solicitar-acesso-screen" class="login-screen" hidden>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">FinanGold</span></div></div>
+  <div class="auth-panel">
+    <div class="auth-panel-inner">
+      <div class="auth-eyebrow">[ pedir acesso ]</div>
+      <h1 id="solicitar-titulo">Peça o seu acesso</h1>
+      <p class="auth-lede" id="solicitar-lede"></p>
+      <form id="solicitar-form" class="solicitar-form">
+        <div class="tipo-pedido" role="radiogroup" aria-label="Tipo de pedido">
+          <label class="tipo-opcao"><input type="radio" name="solicitar-tipo" value="nova" checked> Quero usar o FinanGold na minha empresa</label>
+          <label class="tipo-opcao"><input type="radio" name="solicitar-tipo" value="existente"> Trabalho em uma empresa que já usa o FinanGold</label>
+        </div>
+        <input type="text" id="solicitar-nome" placeholder="Seu nome" autocomplete="name" maxlength="80" required>
+        <input type="text" id="solicitar-empresa" placeholder="Nome da sua empresa" maxlength="80" required>
+        <textarea id="solicitar-mensagem" placeholder="Mensagem (opcional): telefone, ramo da empresa, o que você precisa" maxlength="500" rows="3"></textarea>
+        <button type="submit" id="btn-solicitar-enviar">Enviar pedido</button>
+      </form>
+      <p id="solicitar-estado" class="solicitar-estado" hidden></p>
+      <p id="solicitar-status" class="status-message"></p>
+      <button type="button" id="btn-solicitar-verificar" class="btn-logout" hidden>Verificar de novo</button>
+      <button type="button" id="btn-solicitar-sair" class="btn-logout">Sair</button>
+    </div>
+  </div>
+</div>
+
 <div id="app-shell" class="app-shell" hidden>
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
@@ -120,7 +145,7 @@
           <button type="button" class="nav-item nav-subitem" data-view="estoque-form">Nova peça</button>
         </div>
       </div>
-      <button type="button" class="nav-item" data-view="ajustes"><span class="nav-idx">04</span>Ajustes</button>
+      <button type="button" class="nav-item" data-view="ajustes"><span class="nav-idx">04</span>Ajustes<span class="nav-badge" id="ajustes-badge" hidden></span></button>
     </nav>
     <div class="sidebar-footer">
       <div class="user-identity">
@@ -456,6 +481,12 @@
           <h2>Empresas</h2>
           <p class="field-hint">Crie uma empresa nova para outro empresário usar o app. Ele entra com a conta Google dele e vê apenas a empresa dele.</p>
           <ul id="empresas-admin-lista" class="lista-simples"></ul>
+
+          <h3 class="sub-titulo">Pedidos de acesso</h3>
+          <div id="pedidos-lista" class="pedidos-lista"></div>
+          <p id="pedidos-status" class="status-message"></p>
+
+          <h3 class="sub-titulo">Criar empresa</h3>
           <form id="empresa-add-form" class="lancamento-form">
             <div class="form-grid">
               <div class="form-field">
@@ -570,6 +601,7 @@
 <script src="js/usuarios-admin.js"></script>
 <script src="js/listas-admin.js"></script>
 <script src="js/empresas-admin.js"></script>
+<script src="js/solicitar-acesso.js"></script>
 <script src="js/art.js"></script>
 <script src="js/dashboard-data.js"></script>
 <script src="js/charts.js"></script>

@@ -2,6 +2,7 @@ const loginScreen = document.getElementById("login-screen");
 const companyPickerScreen = document.getElementById("company-picker-screen");
 const cadastroScreen = document.getElementById("cadastro-screen");
 const acessoNegadoScreen = document.getElementById("acesso-negado-screen");
+const solicitarAcessoScreen = document.getElementById("solicitar-acesso-screen");
 const appShell = document.getElementById("app-shell");
 const loginButton = document.getElementById("btn-login");
 const logoutButton = document.getElementById("btn-logout");
@@ -17,6 +18,8 @@ const topbarEmpresa = document.getElementById("topbar-empresa");
 let currentEmail = null;
 let currentIsSuperAdmin = false;
 let currentCompanies = [];
+let currentMasterCompanies = [];
+let currentPedido = null;
 let currentUserLinha = null;
 let ajustesHandlersReady = false;
 
@@ -42,6 +45,7 @@ function hideAllScreens() {
   companyPickerScreen.hidden = true;
   cadastroScreen.hidden = true;
   acessoNegadoScreen.hidden = true;
+  solicitarAcessoScreen.hidden = true;
   appShell.hidden = true;
 }
 
@@ -377,6 +381,7 @@ async function startApp(token, nome, perfil, linha) {
   if (gatewayMode && currentIsSuperAdmin) {
     setupEmpresasAdmin();
     renderEmpresasAdminList();
+    loadPedidosAdmin();
   }
 
   statusMessage.textContent = "Carregando dados...";
@@ -462,6 +467,7 @@ function companiesFromMe(me) {
 async function refreshCompaniesList() {
   const me = await gatewayCall("me", {}, accessToken);
   currentIsSuperAdmin = Boolean(me.superAdmin);
+  currentMasterCompanies = me.companies.filter((c) => c.perfil === ROLE_MASTER).map((c) => ({ empresa: c.empresa, spreadsheetId: c.spreadsheetId }));
   currentCompanies = companiesFromMe(me);
   document.getElementById("ajustes-trocar-empresa-card").hidden = currentCompanies.length <= 1;
 }
@@ -481,6 +487,8 @@ async function resolveCompaniesForEmail(email, token) {
     // Usuários tab lists this email, plus any it may set up for the first time.
     const me = await gatewayCall("me", {}, token);
     currentIsSuperAdmin = Boolean(me.superAdmin);
+    currentPedido = me.pedido || null;
+    currentMasterCompanies = me.companies.filter((c) => c.perfil === ROLE_MASTER).map((c) => ({ empresa: c.empresa, spreadsheetId: c.spreadsheetId }));
     return companiesFromMe(me);
   }
   const found = (lookupTenants(email) || []).slice();
@@ -546,6 +554,12 @@ async function handleSignedIn(token) {
     return;
   }
   if (companies.length === 0) {
+    currentEmail = email;
+    if (CONFIG.GATEWAY_URL) {
+      // Keep the session: the person can ask for access from here.
+      showSolicitarAcessoScreen(email, currentPedido);
+      return;
+    }
     clearTokenSession();
     loginStatus.textContent = `O e-mail ${email} ainda não tem acesso a nenhuma empresa. Peça a quem administra para cadastrar este e-mail em Ajustes.`;
     return;
@@ -591,6 +605,12 @@ logoutButton.addEventListener("click", () => {
 });
 
 pickerLogoutButton.addEventListener("click", () => {
+  forgetSessionPlace();
+  signOut();
+  showLogin();
+});
+
+document.getElementById("btn-solicitar-sair").addEventListener("click", () => {
   forgetSessionPlace();
   signOut();
   showLogin();
