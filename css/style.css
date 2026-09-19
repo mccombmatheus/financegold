@@ -556,12 +556,6 @@ body {
   font-weight: 600;
 }
 
-.nav-idx {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  opacity: 0.7;
-}
-
 .nav-label {
   display: flex;
   align-items: center;
