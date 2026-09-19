@@ -121,6 +121,7 @@ async function resolveProfileAndEnter(tenant, token, email) {
   CONFIG.SPREADSHEET_ID = tenant.spreadsheetId;
   if (tenant.sheetName) CONFIG.SHEET_NAME = tenant.sheetName;
   setActiveCompanyLabel(tenant.empresa);
+  rememberCompany(tenant.spreadsheetId);
 
   try {
     await ensureUsuariosSheet(token);
@@ -264,6 +265,34 @@ function setupAjustesHandlers() {
 }
 
 const LAST_SESSION_KEY = "financegold_last_session";
+const REMEMBERED_COMPANY_KEY = "financegold_company";
+
+// Per-tab (sessionStorage): a page reload should land back in the company the
+// user was working in, not on the company picker again. Cleared on logout.
+function rememberCompany(spreadsheetId) {
+  try {
+    sessionStorage.setItem(REMEMBERED_COMPANY_KEY, spreadsheetId);
+  } catch (err) {
+    // convenience only
+  }
+}
+
+function loadRememberedCompany() {
+  try {
+    return sessionStorage.getItem(REMEMBERED_COMPANY_KEY);
+  } catch (err) {
+    return null;
+  }
+}
+
+function forgetSessionPlace() {
+  try {
+    sessionStorage.removeItem(REMEMBERED_COMPANY_KEY);
+    sessionStorage.removeItem(LAST_VIEW_KEY);
+  } catch (err) {
+    // convenience only
+  }
+}
 
 function saveLastSession(info) {
   try {
@@ -319,6 +348,7 @@ async function startApp(token, nome, perfil, linha) {
   setupNavigation();
   applyRoleVisibility(perfil);
   setupAjustesHandlers();
+  restoreLastViewOnce();
 
   document.getElementById("ajustes-conta-nome").textContent = nome;
   document.getElementById("ajustes-conta-email").textContent = currentEmail || "";
@@ -436,8 +466,15 @@ async function handleSignedIn(token) {
   currentEmail = email;
   currentCompanies = companies;
 
+  const remembered = loadRememberedCompany();
+  const rememberedTenant = companies.length > 1 && remembered
+    ? companies.find((c) => c.spreadsheetId === remembered)
+    : null;
+
   if (companies.length === 1) {
     await resolveProfileAndEnter(companies[0], token, email);
+  } else if (rememberedTenant) {
+    await resolveProfileAndEnter(rememberedTenant, token, email);
   } else {
     showCompanyPicker(companies, token, email);
   }
@@ -460,16 +497,19 @@ loginButton.addEventListener("click", async () => {
 });
 
 logoutButton.addEventListener("click", () => {
+  forgetSessionPlace();
   signOut();
   showLogin();
 });
 
 pickerLogoutButton.addEventListener("click", () => {
+  forgetSessionPlace();
   signOut();
   showLogin();
 });
 
 acessoNegadoLogoutButton.addEventListener("click", () => {
+  forgetSessionPlace();
   signOut();
   showLogin();
 });

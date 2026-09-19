@@ -15,6 +15,24 @@ const VIEW_GROUPS = {
 };
 
 const SIDEBAR_COLLAPSED_KEY = "financegold_sidebar_collapsed";
+const LAST_VIEW_KEY = "financegold_view";
+let lastViewRestored = false;
+
+// After a page reload, go back to the screen the user was on instead of always
+// the dashboard. Only once per page load (switching company later should start
+// fresh), and only if the role can still see that screen.
+function restoreLastViewOnce() {
+  if (lastViewRestored) return;
+  lastViewRestored = true;
+  try {
+    const view = sessionStorage.getItem(LAST_VIEW_KEY);
+    if (!view) return;
+    const navItem = document.querySelector(`.nav-item[data-view="${view}"]`);
+    if (navItem && !navItem.hidden) setActiveView(view);
+  } catch (err) {
+    // convenience only
+  }
+}
 
 function setActiveView(view) {
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
@@ -31,6 +49,12 @@ function setActiveView(view) {
 
   const group = VIEW_GROUPS[view];
   if (group) openSubmenu(group);
+
+  try {
+    sessionStorage.setItem(LAST_VIEW_KEY, view);
+  } catch (err) {
+    // convenience only
+  }
 }
 
 function openSubmenu(group) {
