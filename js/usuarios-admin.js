@@ -64,6 +64,10 @@ async function refreshUsuariosAdmin() {
 }
 
 function setupUsuarioAddForm() {
+  const hintEl = document.getElementById("usuario-add-hint");
+  if (hintEl && CONFIG.GATEWAY_URL) {
+    hintEl.textContent = "Ao adicionar, a pessoa já pode entrar com essa conta Google — não precisa compartilhar a planilha.";
+  }
   const form = document.getElementById("usuario-add-form");
   const statusEl = document.getElementById("usuario-add-status");
   const submitButton = document.getElementById("btn-usuario-add");
@@ -83,7 +87,9 @@ function setupUsuarioAddForm() {
     statusEl.textContent = "Salvando...";
     try {
       await addUsuario(email, nome, perfil, accessToken);
-      statusEl.textContent = "Usuário adicionado. Falta compartilhar a planilha no Google Drive com este e-mail.";
+      statusEl.textContent = CONFIG.GATEWAY_URL
+        ? "Usuário adicionado. Ele já pode entrar com essa conta Google."
+        : "Usuário adicionado. Falta compartilhar a planilha no Google Drive com este e-mail.";
       form.reset();
       document.getElementById("usuario-add-perfil").value = "Visualizador";
       await refreshUsuariosAdmin();

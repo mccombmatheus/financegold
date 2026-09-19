@@ -1,4 +1,35 @@
+// Gateway mode (CONFIG.GATEWAY_URL set): the four functions below call the
+// Apps Script gateway instead of the Sheets API. It is a POST with a
+// text/plain body on purpose — that is a "simple" request, so the browser sends
+// no CORS preflight (Apps Script web apps can't answer one). The Google access
+// token travels in the body, over HTTPS, for the gateway to verify.
+async function gatewayCall(action, params, token) {
+  const response = await fetch(CONFIG.GATEWAY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(Object.assign({ action, token }, params)),
+  });
+  let payload;
+  try {
+    payload = await response.json();
+  } catch (err) {
+    throw new Error("Resposta inválida do servidor do app. Tente novamente em instantes.");
+  }
+  if (!payload || payload.ok !== true) {
+    throw new Error((payload && payload.error) || "Erro no servidor do app.");
+  }
+  return payload.data;
+}
+
 async function fetchSheetValues(spreadsheetId, range, token, options = {}) {
+  if (CONFIG.GATEWAY_URL) {
+    const data = await gatewayCall(
+      "getValues",
+      { spreadsheetId, range, valueRenderOption: options.valueRenderOption },
+      token
+    );
+    return data.values || [];
+  }
   const params = new URLSearchParams();
   if (options.valueRenderOption) {
     params.set("valueRenderOption", options.valueRenderOption);
@@ -20,6 +51,9 @@ async function fetchSheetValues(spreadsheetId, range, token, options = {}) {
 }
 
 async function getSheetTitles(spreadsheetId, token) {
+  if (CONFIG.GATEWAY_URL) {
+    return (await gatewayCall("getTitles", { spreadsheetId }, token)).titles;
+  }
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=sheets.properties.title`;
   const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (!response.ok) {
@@ -31,6 +65,9 @@ async function getSheetTitles(spreadsheetId, token) {
 }
 
 async function createSheetTab(spreadsheetId, title, token) {
+  if (CONFIG.GATEWAY_URL) {
+    return gatewayCall("addTab", { spreadsheetId, title }, token);
+  }
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
   const response = await fetch(url, {
     method: "POST",
@@ -52,6 +89,9 @@ async function createSheetTab(spreadsheetId, title, token) {
 // "detect the table" heuristic gets confused by this sheet's large formatted-but-
 // empty tail and lands new rows far past the real data instead of right after it.
 async function updateSheetRow(spreadsheetId, range, rowValues, token) {
+  if (CONFIG.GATEWAY_URL) {
+    return gatewayCall("updateValues", { spreadsheetId, range, values: [rowValues] }, token);
+  }
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
 
   const response = await fetch(url, {

@@ -14,7 +14,17 @@ const CONFIG = {
   CLIENT_ID: "421144448289-jfiiagc3pij4qoaoq0m2dhnjuda4ua8t.apps.googleusercontent.com",
   SPREADSHEET_ID: "",
   SHEET_NAME: "Lançamento",
-  // Read+write on Sheets (form writes), plus email so we can identify which
-  // company's spreadsheet to load (see js/tenants.js).
-  SCOPES: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email",
+  // URL of the deployed Apps Script gateway (see apps-script/LEIA-ME.md). When
+  // set, every spreadsheet read/write goes through it: people no longer need
+  // the spreadsheet shared with their own Google account, and the login only
+  // asks for their email. Left empty, the app talks to the Sheets API directly
+  // with each person's own token (the original mode; needs Drive sharing).
+  GATEWAY_URL: "",
+  SCOPES: "",
 };
+
+// Gateway mode needs only the email scope (identity). Direct mode also needs
+// Sheets read/write, plus email to pick the company (see js/tenants.js).
+CONFIG.SCOPES = CONFIG.GATEWAY_URL
+  ? "https://www.googleapis.com/auth/userinfo.email"
+  : "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/userinfo.email";

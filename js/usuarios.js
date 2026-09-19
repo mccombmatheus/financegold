@@ -4,6 +4,18 @@ const USUARIOS_SHEET_NAME = "Usuários";
 // spreadsheet the first time it's needed, and upgrades a pre-existing
 // 2-column version (from before roles existed) in place.
 async function ensureUsuariosSheet(token) {
+  if (CONFIG.GATEWAY_URL) {
+    // Gateway mode: the role migration below reads the whole Usuários tab,
+    // which only a Master may do — and every company already went through it
+    // in direct mode. Just make sure the tab exists (allowed for a Master or
+    // the admin setting up a brand-new company; a no-op for everyone else).
+    const existing = await getSheetTitles(CONFIG.SPREADSHEET_ID, token);
+    if (!existing.includes(USUARIOS_SHEET_NAME)) {
+      await createSheetTab(CONFIG.SPREADSHEET_ID, USUARIOS_SHEET_NAME, token);
+      await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A1:C1`, ["Email", "Nome", "Perfil"], token);
+    }
+    return;
+  }
   const titles = await getSheetTitles(CONFIG.SPREADSHEET_ID, token);
   if (!titles.includes(USUARIOS_SHEET_NAME)) {
     await createSheetTab(CONFIG.SPREADSHEET_ID, USUARIOS_SHEET_NAME, token);
@@ -41,6 +53,12 @@ async function migrateUsuariosPerfilColumn(token) {
 }
 
 async function fetchUsuario(email, token) {
+  if (CONFIG.GATEWAY_URL) {
+    // The gateway answers "who am I in this company" without exposing the list.
+    const me = await gatewayCall("me", {}, token);
+    const mine = me.companies.find((c) => c.spreadsheetId === CONFIG.SPREADSHEET_ID);
+    return mine ? { linha: mine.linha, nome: mine.nome, perfil: mine.perfil } : null;
+  }
   const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A2:C`, token, {
     valueRenderOption: "UNFORMATTED_VALUE",
   });

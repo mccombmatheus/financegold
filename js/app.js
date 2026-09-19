@@ -425,6 +425,16 @@ async function startApp(token, nome, perfil, linha) {
 // enough on its own. Drive sharing is still the real gate: without access to a
 // spreadsheet the Sheets API refuses the read and that company is skipped.
 async function resolveCompaniesForEmail(email, token) {
+  if (CONFIG.GATEWAY_URL) {
+    // The gateway is the source of truth: it returns the companies whose
+    // Usuários tab lists this email, plus any it may set up for the first time.
+    const me = await gatewayCall("me", {}, token);
+    return me.companies.concat(me.bootstrap).map((c) => ({
+      empresa: c.empresa,
+      spreadsheetId: c.spreadsheetId,
+      sheetName: c.sheetName,
+    }));
+  }
   const found = (lookupTenants(email) || []).slice();
   const knownIds = new Set(found.map((c) => c.spreadsheetId));
   const candidates = allKnownCompanies().filter((c) => !knownIds.has(c.spreadsheetId));
@@ -475,10 +485,19 @@ async function handleSignedIn(token) {
     return;
   }
 
-  const companies = await resolveCompaniesForEmail(email, token);
+  let companies;
+  try {
+    companies = await resolveCompaniesForEmail(email, token);
+  } catch (err) {
+    if (isNetworkError(err)) return enterOfflineFromLastSession(token);
+    console.error(err);
+    clearTokenSession();
+    loginStatus.textContent = `Não foi possível verificar seu acesso: ${err.message}`;
+    return;
+  }
   if (companies.length === 0) {
     clearTokenSession();
-    loginStatus.textContent = `O e-mail ${email} ainda não tem acesso a nenhuma empresa. Peça a quem administra para cadastrar este e-mail em Ajustes e compartilhar a planilha com ele no Google Drive.`;
+    loginStatus.textContent = `O e-mail ${email} ainda não tem acesso a nenhuma empresa. Peça a quem administra para cadastrar este e-mail em Ajustes.`;
     return;
   }
 
