@@ -72,7 +72,7 @@ function setupSistema() {
   Object.keys(SEGMENTOS).forEach((id) => {
     const option = document.createElement("option");
     option.value = id;
-    option.textContent = `${SEGMENTOS[id].nome} — ${SEGMENTOS[id].marca}`;
+    option.textContent = SEGMENTOS[id].nome;
     segmentoSelect.appendChild(option);
   });
   segmentoSelect.value = "outro";

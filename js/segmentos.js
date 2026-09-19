@@ -93,8 +93,6 @@ function aplicarSegmento(id) {
   });
   const title = document.getElementById("sidebar-title");
   if (title) title.textContent = seg.marca;
-  const caption = document.getElementById("sidebar-segmento");
-  if (caption) caption.textContent = `Segmento: ${seg.nome}`;
   if (typeof trocarLogoSegmento === "function") trocarLogoSegmento(segmentoAtual);
   const espInput = document.getElementById("estoque-field-pureza");
   if (espInput) {
