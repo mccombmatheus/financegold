@@ -123,13 +123,24 @@ function buildIngotArt() {
   ]);
 }
 
+// The two-cube mark spans about 2.6 x 2.5 grid units, so its scale and offset
+// are computed from the box it must fit in — a fixed scale used to overflow the
+// viewBox and clip the right and bottom edges.
 function buildLogoMark(size) {
-  const svg = wrapArt(size + 8, size + 2, "art-logo-svg", [
-    colored("art-accent", buildWireframe([[0, 0, 0, 1], [1, 0, 0, 1]], size * 0.55, size * 0.5, size * 0.62, 1.6, 1)),
+  const pad = 2;
+  const boxW = Math.round(size * 1.35);
+  const boxH = Math.round(size * 1.3);
+  const unitsW = 2 * Math.cos(Math.PI / 6) * 1.5; // x-extent of the two cubes in grid units
+  const unitsH = 2.5; // y-extent in grid units
+  const scale = Math.min((boxW - 2 * pad) / unitsW, (boxH - 2 * pad) / unitsH);
+  const ox = pad + Math.cos(Math.PI / 6) * scale + (boxW - 2 * pad - unitsW * scale) / 2;
+  const oy = pad + scale + (boxH - 2 * pad - unitsH * scale) / 2;
+  const svg = wrapArt(boxW, boxH, "art-logo-svg", [
+    colored("art-accent", buildWireframe([[0, 0, 0, 1], [1, 0, 0, 1]], scale, ox, oy, 1.6, 1)),
   ]);
   // The logo has a fixed size (the other art scales to its container).
-  svg.setAttribute("width", String(size + 8));
-  svg.setAttribute("height", String(size + 2));
+  svg.setAttribute("width", String(boxW));
+  svg.setAttribute("height", String(boxH));
   return svg;
 }
 
