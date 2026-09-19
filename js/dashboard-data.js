@@ -86,3 +86,38 @@ function formatMonthLabel(key) {
   const label = MONTH_LABELS[Number(month) - 1] || month;
   return `${label}/${year.slice(2)}`;
 }
+
+// Time series for the little sparklines inside the KPI tiles: one bucket per
+// day for ranges up to ~3 months, otherwise one per month. `saldo` is the
+// running balance across the buckets. Real data only — an empty range yields
+// empty arrays and the caller draws nothing.
+function computeSeries(records, start, end) {
+  const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000));
+  const monthly = spanDays > 92;
+  const keyOf = (d) =>
+    monthly
+      ? d.getUTCFullYear() * 12 + d.getUTCMonth()
+      : Math.floor((d.getTime() - start.getTime()) / 86400000);
+
+  const buckets = new Map();
+  records.forEach((r) => {
+    if (!r.data || (r.tipo !== "Entrada" && r.tipo !== "Saída")) return;
+    const key = keyOf(r.data);
+    if (!buckets.has(key)) buckets.set(key, { entradas: 0, saidas: 0 });
+    const bucket = buckets.get(key);
+    if (r.tipo === "Entrada") bucket.entradas += r.valor;
+    else bucket.saidas += Math.abs(r.valor);
+  });
+
+  const keys = Array.from(buckets.keys()).sort((a, b) => a - b);
+  const series = { entradas: [], saidas: [], saldo: [] };
+  let running = 0;
+  keys.forEach((key) => {
+    const bucket = buckets.get(key);
+    running += bucket.entradas - bucket.saidas;
+    series.entradas.push(bucket.entradas);
+    series.saidas.push(bucket.saidas);
+    series.saldo.push(running);
+  });
+  return series;
+}

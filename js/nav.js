@@ -7,6 +7,15 @@ const VIEW_TITLES = {
   ajustes: "Ajustes",
 };
 
+const VIEW_EYEBROWS = {
+  dashboard: "// painel",
+  "lancamento-lista": "// fluxo de caixa",
+  "lancamento-form": "// fluxo de caixa",
+  "estoque-lista": "// estoque",
+  "estoque-form": "// estoque",
+  ajustes: "// ajustes",
+};
+
 const VIEW_GROUPS = {
   "lancamento-lista": "lancamento",
   "lancamento-form": "lancamento",
@@ -46,6 +55,8 @@ function setActiveView(view) {
   });
   const topbarTitle = document.querySelector(".app-topbar h2");
   if (topbarTitle) topbarTitle.textContent = VIEW_TITLES[view] || "";
+  const topbarEyebrow = document.getElementById("topbar-eyebrow");
+  if (topbarEyebrow) topbarEyebrow.textContent = VIEW_EYEBROWS[view] || "";
 
   const group = VIEW_GROUPS[view];
   if (group) openSubmenu(group);

@@ -69,7 +69,33 @@ function computeTrend(current, previous) {
   return ((current - previous) / Math.abs(previous)) * 100;
 }
 
-function buildKpiTile({ label, labelExtra, value, icon, iconClass, trend, hero, invertTrendColor }) {
+// Tiny line chart drawn from real series values. Needs at least 2 points.
+function buildSparkline(values, filled) {
+  if (!values || values.length < 2) return null;
+  const width = 200;
+  const height = 60;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const range = max - min || 1;
+  const points = values.map((v, i) => [
+    (i / (values.length - 1)) * width,
+    height - 4 - ((v - min) / range) * (height - 8),
+  ]);
+  const svg = svgNode("svg", { viewBox: `0 0 ${width} ${height}`, preserveAspectRatio: "none", "aria-hidden": "true", focusable: "false" });
+  svg.setAttribute("class", "stat-spark");
+  if (filled) {
+    svg.appendChild(
+      svgNode("polygon", {
+        points: `0,${height} ${points.map((p) => p.join(",")).join(" ")} ${width},${height}`,
+        class: "stat-spark-fill",
+      })
+    );
+  }
+  svg.appendChild(svgNode("polyline", { points: points.map((p) => p.join(",")).join(" "), class: "stat-spark-line", "vector-effect": "non-scaling-stroke" }));
+  return svg;
+}
+
+function buildKpiTile({ label, labelExtra, value, icon, iconClass, trend, hero, invertTrendColor, spark, art }) {
   const tile = document.createElement("div");
   tile.className = `stat-tile${hero ? " stat-tile-hero" : ""}`;
 
@@ -98,6 +124,13 @@ function buildKpiTile({ label, labelExtra, value, icon, iconClass, trend, hero, 
   valueEl.className = "stat-value";
   valueEl.textContent = value;
 
+  if (art) {
+    const artSlot = document.createElement("div");
+    artSlot.className = `stat-art stat-art-${art}`;
+    artSlot.appendChild(art === "hero" ? buildHeroArt() : buildIngotArt());
+    tile.appendChild(artSlot);
+  }
+
   tile.appendChild(top);
   tile.appendChild(valueEl);
 
@@ -122,10 +155,19 @@ function buildKpiTile({ label, labelExtra, value, icon, iconClass, trend, hero, 
     tile.appendChild(trendEl);
   }
 
+  const sparkSvg = spark ? buildSparkline(spark.values, spark.filled) : null;
+  if (sparkSvg) {
+    const sparkSlot = document.createElement("div");
+    sparkSlot.className = `stat-spark-slot${spark.filled ? " stat-spark-slot-wide" : ""}`;
+    if (spark.tone) sparkSlot.classList.add(`stat-spark-${spark.tone}`);
+    sparkSlot.appendChild(sparkSvg);
+    tile.appendChild(sparkSlot);
+  }
+
   return tile;
 }
 
-function renderKpis(records, prevRecords) {
+function renderKpis(records, prevRecords, series) {
   const kpis = computeKpis(records);
   const prevKpis = prevRecords && prevRecords.length > 0 ? computeKpis(prevRecords) : null;
   const trendFor = (curr, key) => (prevKpis ? computeTrend(curr, prevKpis[key]) : null);
@@ -141,6 +183,7 @@ function renderKpis(records, prevRecords) {
       icon: KPI_ICONS.up,
       iconClass: "success",
       trend: trendFor(kpis.entradas, "entradas"),
+      spark: series ? { values: series.entradas, tone: "accent" } : null,
     })
   );
   kpiRow.appendChild(
@@ -152,6 +195,7 @@ function renderKpis(records, prevRecords) {
       iconClass: "danger",
       trend: trendFor(kpis.saidas, "saidas"),
       invertTrendColor: true,
+      spark: series ? { values: series.saidas, tone: "accent" } : null,
     })
   );
   kpiRow.appendChild(
@@ -162,26 +206,30 @@ function renderKpis(records, prevRecords) {
       icon: KPI_ICONS.scale,
       iconClass: "hero",
       hero: true,
+      art: "hero",
       trend: trendFor(kpis.saldo, "saldo"),
+      spark: series ? { values: series.saldo, filled: true, tone: "accent" } : null,
     })
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Ouro comprado",
-      labelExtra: " (g)",
+      label: "Compras",
+      labelExtra: " de ouro (g)",
       value: formatGrams(kpis.pesoComprado),
       icon: KPI_ICONS.gem,
       iconClass: "neutral",
+      art: "ingot",
       trend: trendFor(kpis.pesoComprado, "pesoComprado"),
     })
   );
   kpiRow.appendChild(
     buildKpiTile({
-      label: "Ouro vendido",
-      labelExtra: " (g)",
+      label: "Vendas",
+      labelExtra: " de ouro (g)",
       value: formatGrams(kpis.pesoVendido),
       icon: KPI_ICONS.gem,
       iconClass: "neutral",
+      art: "ingot",
       trend: trendFor(kpis.pesoVendido, "pesoVendido"),
     })
   );
@@ -282,7 +330,7 @@ function renderDashboardCharts() {
   const prevStart = new Date(prevEnd.getTime() - durationMs);
   const prevFiltered = filterByDateRange(allLancamentos, prevStart, prevEnd);
 
-  renderKpis(filtered, prevFiltered);
+  renderKpis(filtered, prevFiltered, computeSeries(filtered, start, end));
   renderAtividadeRecente(filtered);
   renderDivergingBarChart(chartBody("chart-saldo-loja"), computeByLoja(filtered));
   renderRankedBarChart(chartBody("chart-categorias-saida"), topNWithOthers(computeByCategoria(filtered, "Saída"), 10));
