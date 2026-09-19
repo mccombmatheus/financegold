@@ -113,9 +113,16 @@ function setupSistema() {
     }
   });
 
-  document.getElementById("btn-sistema-atualizar").addEventListener("click", () => {
-    loadPedidosSistema();
-    loadEmpresasSistema();
+  const refreshButton = document.getElementById("btn-sistema-atualizar");
+  refreshButton.addEventListener("click", async () => {
+    refreshButton.disabled = true;
+    refreshButton.textContent = "Atualizando…";
+    await Promise.all([loadPedidosSistema(), loadEmpresasSistema()]);
+    refreshButton.textContent = "Atualizado";
+    setTimeout(() => {
+      refreshButton.textContent = "Atualizar";
+      refreshButton.disabled = false;
+    }, 1500);
   });
   document.getElementById("btn-sistema-abrir-empresa").addEventListener("click", () => {
     showCompanyPicker(currentCompanies, accessToken, currentEmail);
