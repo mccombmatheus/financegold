@@ -58,6 +58,19 @@ async function fetchUsuario(email, token) {
   return found;
 }
 
+// Read-only check against a specific company's "Usuários" tab (not the
+// currently-selected one): is this email listed there? Used at sign-in to
+// discover which companies a person has been authorized for. It never creates
+// or edits anything, and a person without Drive access to that spreadsheet just
+// gets an API error, which the caller treats as "not listed".
+async function isEmailListedInCompany(spreadsheetId, email, token) {
+  const rows = await fetchSheetValues(spreadsheetId, `${USUARIOS_SHEET_NAME}!A2:A`, token, {
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const normalized = email.trim().toLowerCase();
+  return rows.some((row) => typeof row[0] === "string" && row[0].trim().toLowerCase() === normalized);
+}
+
 async function fetchAllUsuarios(token) {
   const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A2:C`, token, {
     valueRenderOption: "UNFORMATTED_VALUE",

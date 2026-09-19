@@ -83,7 +83,7 @@ function setupUsuarioAddForm() {
     statusEl.textContent = "Salvando...";
     try {
       await addUsuario(email, nome, perfil, accessToken);
-      statusEl.textContent = "Usuário adicionado.";
+      statusEl.textContent = "Usuário adicionado. Falta compartilhar a planilha no Google Drive com este e-mail.";
       form.reset();
       document.getElementById("usuario-add-perfil").value = "Visualizador";
       await refreshUsuariosAdmin();

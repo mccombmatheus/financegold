@@ -419,6 +419,25 @@ async function startApp(token, nome, perfil, linha) {
   }
 }
 
+// Companies for a signed-in email = the ones pinned to it in js/tenants.js
+// (the owner's own routing) plus every other known company whose "Usuários" tab
+// lists it. The second half is what makes "Master adds someone in Ajustes"
+// enough on its own. Drive sharing is still the real gate: without access to a
+// spreadsheet the Sheets API refuses the read and that company is skipped.
+async function resolveCompaniesForEmail(email, token) {
+  const found = (lookupTenants(email) || []).slice();
+  const knownIds = new Set(found.map((c) => c.spreadsheetId));
+  const candidates = allKnownCompanies().filter((c) => !knownIds.has(c.spreadsheetId));
+
+  const results = await Promise.allSettled(
+    candidates.map((c) => isEmailListedInCompany(c.spreadsheetId, email, token))
+  );
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled" && result.value) found.push(candidates[index]);
+  });
+  return found;
+}
+
 // A resumed sessionStorage token still needs an online round-trip to verify
 // scopes and identity — without this fallback, reloading the page while
 // offline (e.g. during a power/internet outage) would hang forever on
@@ -456,10 +475,10 @@ async function handleSignedIn(token) {
     return;
   }
 
-  const companies = lookupTenants(email);
-  if (!companies || companies.length === 0) {
+  const companies = await resolveCompaniesForEmail(email, token);
+  if (companies.length === 0) {
     clearTokenSession();
-    loginStatus.textContent = `O e-mail ${email} não está vinculado a nenhuma empresa neste app.`;
+    loginStatus.textContent = `O e-mail ${email} ainda não tem acesso a nenhuma empresa. Peça a quem administra para cadastrar este e-mail em Ajustes e compartilhar a planilha com ele no Google Drive.`;
     return;
   }
 

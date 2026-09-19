@@ -34,3 +34,17 @@ function lookupTenants(email) {
   const match = Object.keys(TENANTS).find((key) => key.toLowerCase() === normalized);
   return match ? TENANTS[match] : undefined;
 }
+
+// Every company this app knows about, deduplicated across all TENANTS entries.
+// Used at sign-in to look for the signed-in email in each company's own
+// "Usuários" tab, so a Master adding someone in Ajustes is enough to route them
+// there — no per-person entry (and no code push) needed in TENANTS above.
+function allKnownCompanies() {
+  const byId = new Map();
+  Object.values(TENANTS).forEach((list) => {
+    list.forEach((company) => {
+      if (!byId.has(company.spreadsheetId)) byId.set(company.spreadsheetId, company);
+    });
+  });
+  return Array.from(byId.values());
+}
