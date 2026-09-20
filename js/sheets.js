@@ -3,7 +3,13 @@
 // text/plain body on purpose — that is a "simple" request, so the browser sends
 // no CORS preflight (Apps Script web apps can't answer one). The Google access
 // token travels in the body, over HTTPS, for the gateway to verify.
-async function gatewayCall(action, params, token) {
+// Reads may be asked again when the server answers with a page instead of data
+// (an Apps Script hiccup that comes and goes) or says it is busy. Writes never
+// are: repeating those is not always harmless.
+const ACOES_DE_LEITURA = ["me", "getValues", "getTitles", "listCompanies", "listRequests"];
+
+async function gatewayCall(action, params, token, tentativa = 0) {
+  const podeRepetir = ACOES_DE_LEITURA.indexOf(action) !== -1 && tentativa < 2;
   const response = await fetch(CONFIG.GATEWAY_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -13,7 +19,15 @@ async function gatewayCall(action, params, token) {
   try {
     payload = await response.json();
   } catch (err) {
+    if (podeRepetir) {
+      await new Promise((resolve) => setTimeout(resolve, 600 * (tentativa + 1)));
+      return gatewayCall(action, params, token, tentativa + 1);
+    }
     throw new Error("Resposta inválida do servidor do app. Tente novamente em instantes.");
+  }
+  if (podeRepetir && payload && payload.ok !== true && payload.status === 503) {
+    await new Promise((resolve) => setTimeout(resolve, 600 * (tentativa + 1)));
+    return gatewayCall(action, params, token, tentativa + 1);
   }
   if (payload && payload.ok !== true && payload.status === 401) {
     // Google access tokens last ~1 hour. Send the person back to the login

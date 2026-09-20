@@ -76,6 +76,44 @@ async function tentarVariasVezes(fn) {
   }
 }
 
+// The scopes of a token: what Google reported when it issued it (kept for this
+// tab), else asked over the network. A brand-new token is not asked about at all:
+// Google's token check can briefly not know it yet, which used to bounce the
+// person back to the login screen on the first try.
+async function escoposDoToken(token) {
+  const conhecidos = loadSessionScopes();
+  if (conhecidos) return conhecidos;
+  for (let i = 0; ; i += 1) {
+    const escopos = await tentarVariasVezes(() => getTokenScopes(token));
+    if (escopos !== null || !tokenEmitidoHaPouco() || i >= 2) return escopos;
+    await new Promise((resolve) => setTimeout(resolve, 800));
+  }
+}
+
+// Same idea for the account check right after a login.
+async function emailDoToken(token) {
+  for (let i = 0; ; i += 1) {
+    try {
+      return await tentarVariasVezes(() => fetchUserEmail(token));
+    } catch (err) {
+      const recusado = err.status === 401 || err.status === 400;
+      if (!(recusado && tokenEmitidoHaPouco()) || i >= 2) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+  }
+}
+
+// Tells the person why nothing happened after clicking "Continuar com Google".
+function mostrarErroDeLogin(tipo) {
+  const mensagens = {
+    popup_failed_to_open: "O navegador bloqueou a janela do Google. Permita pop-ups para este site e clique de novo.",
+    popup_closed: "A janela do Google foi fechada antes de terminar. Clique de novo para entrar.",
+    access_denied: "O acesso não foi autorizado. Clique de novo e aceite o que o Google pedir.",
+  };
+  showLogin();
+  loginStatus.textContent = mensagens[tipo] || `Não foi possível concluir o login com o Google (${tipo}). Tente de novo.`;
+}
+
 function showApp() {
   hideAllScreens();
   appShell.hidden = false;
@@ -588,7 +626,7 @@ async function handleSignedIn(token) {
 
   let grantedScopes;
   try {
-    grantedScopes = await tentarVariasVezes(() => getTokenScopes(token));
+    grantedScopes = await escoposDoToken(token);
   } catch (err) {
     if (isNetworkError(err)) return enterOfflineFromLastSession(token);
     console.error(err);
@@ -608,7 +646,7 @@ async function handleSignedIn(token) {
 
   let email;
   try {
-    email = await tentarVariasVezes(() => fetchUserEmail(token));
+    email = await emailDoToken(token);
   } catch (err) {
     if (isNetworkError(err)) return enterOfflineFromLastSession(token);
     console.error(err);
@@ -673,16 +711,25 @@ async function handleSignedIn(token) {
   }
 }
 
-const authReady = initAuth(handleSignedIn).catch((err) => {
+const authReady = initAuth(handleSignedIn, mostrarErroDeLogin).catch((err) => {
   console.error(err);
   loginStatus.textContent = "Erro ao carregar o login do Google. Recarregue a página.";
 });
 
 loginButton.addEventListener("click", async () => {
-  loginButton.disabled = true;
   loginStatus.textContent = "";
+  // Open Google's window in the very same click: browsers only allow a pop-up made
+  // directly by a tap/click, and waiting first (await) could get it blocked, which
+  // looked like "it went back and I had to click twice".
+  if (tokenClient) {
+    requestAccessToken();
+    return;
+  }
+  loginButton.disabled = true;
+  loginStatus.textContent = "Preparando o login do Google...";
   try {
     await authReady;
+    loginStatus.textContent = "";
     requestAccessToken();
   } finally {
     loginButton.disabled = false;

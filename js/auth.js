@@ -3,6 +3,10 @@ let accessToken = null;
 
 const SESSION_TOKEN_KEY = "ipanema_gis_access_token";
 const SESSION_EXPIRES_KEY = "ipanema_gis_token_expires_at";
+// What Google said the token may do, and when it was issued (see handleSignedIn):
+// a brand-new token is not asked about again over the network.
+const SESSION_SCOPES_KEY = "ipanema_gis_token_scopes";
+const SESSION_ISSUED_KEY = "ipanema_gis_token_issued_at";
 
 function waitForGoogleIdentity(timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
@@ -21,10 +25,13 @@ function waitForGoogleIdentity(timeoutMs = 10000) {
   });
 }
 
-function saveTokenToSession(token, expiresInSeconds) {
+function saveTokenToSession(token, expiresInSeconds, scopes) {
   try {
     sessionStorage.setItem(SESSION_TOKEN_KEY, token);
     sessionStorage.setItem(SESSION_EXPIRES_KEY, String(Date.now() + expiresInSeconds * 1000));
+    sessionStorage.setItem(SESSION_ISSUED_KEY, String(Date.now()));
+    if (typeof scopes === "string" && scopes) sessionStorage.setItem(SESSION_SCOPES_KEY, scopes);
+    else sessionStorage.removeItem(SESSION_SCOPES_KEY);
   } catch (err) {
     console.warn("Não foi possível salvar a sessão:", err);
   }
@@ -46,17 +53,39 @@ function loadValidTokenFromSession() {
   return null;
 }
 
+// The scopes Google reported when it issued this tab's token (null when unknown).
+function loadSessionScopes() {
+  try {
+    return sessionStorage.getItem(SESSION_SCOPES_KEY) || null;
+  } catch (err) {
+    return null;
+  }
+}
+
+// A token issued moments ago may not yet be known everywhere at Google, so a
+// "not valid" answer about it is worth asking again before believing it.
+function tokenEmitidoHaPouco() {
+  try {
+    const emitido = Number(sessionStorage.getItem(SESSION_ISSUED_KEY) || 0);
+    return emitido > 0 && Date.now() - emitido < 90000;
+  } catch (err) {
+    return false;
+  }
+}
+
 function clearTokenSession() {
   try {
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
     sessionStorage.removeItem(SESSION_EXPIRES_KEY);
+    sessionStorage.removeItem(SESSION_SCOPES_KEY);
+    sessionStorage.removeItem(SESSION_ISSUED_KEY);
   } catch (err) {
     // ignore
   }
   accessToken = null;
 }
 
-async function initAuth(onSignedIn) {
+async function initAuth(onSignedIn, onLoginError) {
   await waitForGoogleIdentity();
   tokenClient = google.accounts.oauth2.initTokenClient({
     client_id: CONFIG.CLIENT_ID,
@@ -64,11 +93,17 @@ async function initAuth(onSignedIn) {
     callback: (response) => {
       if (response.error) {
         console.error("Erro de autenticação com o Google:", response);
+        if (onLoginError) onLoginError(response.error);
         return;
       }
       accessToken = response.access_token;
-      saveTokenToSession(accessToken, response.expires_in);
+      saveTokenToSession(accessToken, response.expires_in, response.scope);
       onSignedIn(accessToken);
+    },
+    // The window did not open (blocked pop-up) or was closed: tell the person instead of doing nothing.
+    error_callback: (erro) => {
+      console.error("Janela de login do Google:", erro);
+      if (onLoginError) onLoginError(erro && erro.type ? erro.type : "unknown");
     },
   });
 }
