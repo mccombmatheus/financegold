@@ -80,7 +80,7 @@ async function reloadListaAdmin(message) {
     if (message) listasStatus(message);
   } catch (err) {
     console.error(err);
-    listasStatus(`Erro: ${describeSaveError(err)}`);
+    listasStatus(`Erro: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -93,7 +93,7 @@ async function removeListaItem(item) {
     await reloadListaAdmin(`"${item.nome}" removido. Lançamentos antigos que usam esse nome continuam como estão.`);
   } catch (err) {
     console.error(err);
-    listasStatus(`Erro ao remover: ${describeSaveError(err)}`);
+    listasStatus(`Erro ao remover: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -118,7 +118,7 @@ async function addListaItem(nome) {
     await reloadListaAdmin(`"${limpo}" adicionado.`);
   } catch (err) {
     console.error(err);
-    listasStatus(`Erro ao salvar: ${describeSaveError(err)}`);
+    listasStatus(`Erro ao salvar: ${mensagemDoErro(err)}`);
   }
 }
 

@@ -12,6 +12,8 @@
 // this object at sign-in, in js/app.js.
 const CONFIG = {
   CLIENT_ID: "421144448289-jfiiagc3pij4qoaoq0m2dhnjuda4ua8t.apps.googleusercontent.com",
+  // The Google account that owns the Apps Script server (it must be an Editor of every company spreadsheet). Shown in a help message when the server cannot write to a sheet.
+  CONTA_DO_SISTEMA: "finanponto@gmail.com",
   SPREADSHEET_ID: "",
   SHEET_NAME: "Lançamento",
   // URL of the deployed Apps Script gateway (see apps-script/LEIA-ME.md). When

@@ -32,7 +32,7 @@ async function loadEmpresasSistema() {
     renderEmpresasSistema();
   } catch (err) {
     console.error(err);
-    if (!err.sessionExpired) sistemaStatus("sistema-empresas-status", `Não foi possível carregar as empresas: ${describeSaveError(err)}`);
+    if (!err.sessionExpired) sistemaStatus("sistema-empresas-status", `Não foi possível carregar as empresas: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -119,7 +119,7 @@ function setupSistema() {
       statusEl.textContent = `Empresa "${nome}" criada. ${ownerNome} já pode entrar com a conta ${ownerEmail.toLowerCase()}.${aviso}`;
     } catch (err) {
       console.error(err);
-      statusEl.textContent = `Não foi possível criar: ${describeSaveError(err)}`;
+      statusEl.textContent = `Não foi possível criar: ${mensagemDoErro(err)}`;
     } finally {
       submitButton.disabled = false;
     }
@@ -167,7 +167,7 @@ async function loadPedidosSistema() {
     renderPedidosSistema();
   } catch (err) {
     console.error(err);
-    if (!err.sessionExpired) sistemaStatus("pedidos-status", `Não foi possível carregar os pedidos: ${describeSaveError(err)}`);
+    if (!err.sessionExpired) sistemaStatus("pedidos-status", `Não foi possível carregar os pedidos: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -252,7 +252,7 @@ function renderPedidosSistema() {
               sistemaStatus("pedidos-status", `Pedido de ${pedido.nome} recusado. A pessoa foi avisada por e-mail.`);
             } catch (err) {
               console.error(err);
-              sistemaStatus("pedidos-status", `Erro: ${describeSaveError(err)}`);
+              sistemaStatus("pedidos-status", `Erro: ${mensagemDoErro(err)}`);
             }
           },
           "usuario-action-danger"
@@ -300,7 +300,7 @@ function renderPedidosSistema() {
               sistemaStatus("pedidos-status", `Pedido de ${pedido.nome} encaminhado ao administrador da empresa.`);
             } catch (err) {
               console.error(err);
-              sistemaStatus("pedidos-status", `Erro ao encaminhar: ${describeSaveError(err)}`);
+              sistemaStatus("pedidos-status", `Erro ao encaminhar: ${mensagemDoErro(err)}`);
             }
           },
           "usuario-action-primary"

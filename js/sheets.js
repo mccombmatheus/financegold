@@ -24,9 +24,25 @@ async function gatewayCall(action, params, token) {
     throw expired;
   }
   if (!payload || payload.ok !== true) {
-    throw new Error((payload && payload.error) || "Erro no servidor do app.");
+    throw new Error(traduzirErroDoServidor((payload && payload.error) || "Erro no servidor do app."));
   }
   return payload.data;
+}
+
+// The server appends a short technical reason to unexpected failures; the most
+// common ones are turned into something a person can act on.
+function traduzirErroDoServidor(mensagem) {
+  const m = String(mensagem);
+  if (/does not have permission|PERMISSION_DENIED|caller does not have/i.test(m)) {
+    return "O servidor do app não tem permissão de edição nesta planilha. Quem é dono da planilha precisa compartilhá-la, como Editor, com a conta do sistema (" + (CONFIG.CONTA_DO_SISTEMA || "a conta que publicou o servidor") + "). " + m;
+  }
+  if (/exceeds grid limits|Range \(.*\) exceeds/i.test(m)) {
+    return "A aba da planilha chegou ao limite de linhas. Adicione mais linhas na planilha e tente de novo. " + m;
+  }
+  if (/Unable to parse range|not found|Requested entity was not found/i.test(m)) {
+    return "O servidor não encontrou a planilha ou a aba pedida. Confira se ela ainda existe. " + m;
+  }
+  return m;
 }
 
 async function fetchSheetValues(spreadsheetId, range, token, options = {}) {

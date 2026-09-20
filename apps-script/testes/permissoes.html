@@ -326,7 +326,10 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   const tMas = step("mas", { action: "getTitles", spreadsheetId: IPA });
   const tViz = step("viz", { action: "getTitles", spreadsheetId: IPA });
   T(tMas.ok && tMas.data.titles.indexOf("Segredos") !== -1, "the Master sees every tab name");
-  T(tViz.ok && tViz.data.titles.indexOf("Segredos") === -1 && tViz.data.titles.indexOf("Estoque") !== -1 && tViz.data.titles.indexOf("Usuários") === -1, "a Viewer only sees the names of tabs the app may use (not 'Segredos', not 'Usuários')");
+  T(tViz.ok && tViz.data.titles.indexOf("Segredos") === -1 && tViz.data.titles.indexOf("Estoque") !== -1 && tViz.data.titles.indexOf("Usuários") !== -1, "a Viewer only sees the names of tabs the app may use (not 'Segredos'); 'Usuários' is listed because the app checks it at every sign-in (its content stays Master-only)");
+  const tEdi = step("edi", { action: "getTitles", spreadsheetId: IPA });
+  T(tEdi.ok && tEdi.data.titles.indexOf("Usuários") !== -1 && tEdi.data.titles.indexOf("Segredos") === -1, "an Editor sees the same list");
+  T(!step("viz", { action: "getValues", spreadsheetId: IPA, range: "Usuários!A2:C" }).ok, "…while the CONTENT of Usuários is still refused to a Viewer");
   T(!step("nobody", { action: "getTitles", spreadsheetId: IPA }).ok, "a stranger sees no tab names");
   // token and identity
   T(!step("", { action: "me" }).ok && !step(undefined, { action: "me" }).ok && !step("x".repeat(5000), { action: "me" }).ok, "empty, missing and oversized tokens are refused");
@@ -442,6 +445,23 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   T(/MUITO PARECIDO/.test(log), "it flags a near-miss address (typo) as a likely cause");
   T(/a coluna A não é texto: 42/.test(log), "it flags a row whose e-mail cell is not text");
   T(/RESULTADO: o e-mail ESTÁ liberado/.test(log) && /Não consegui ler a aba Usuários/.test(log), "it reports per company: found, and a readable error for a company whose tab is unreadable");
+})();
+
+
+// --- unexpected failures explain themselves (only to people who proved who they are)
+(function () {
+  const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+  const state = freshState();
+  const deps = makeDeps(state);
+  deps.sheets.updateValues = () => { throw new Error("API call to sheets.spreadsheets.values.update failed with error: The caller does not have permission"); };
+  const r = (() => { try { return handleRequest({ token: "mas", action: "updateValues", spreadsheetId: IPA, range: "Usuários!A9:C9", values: [["n@x.com", "N", "Editor"]] }, deps); } catch (e) { return e; } })();
+  T(r instanceof GatewayError_ && r.status === 500 && /Detalhe: .*does not have permission/.test(r.message), "an unexpected failure after sign-in reports its short reason (here: the script account cannot edit the sheet)");
+  const longo = (() => { const d = makeDeps(freshState()); d.sheets.updateValues = () => { throw new Error("falhou\nem " + "A".repeat(60) + " " + "x".repeat(400)); }; try { return handleRequest({ token: "mas", action: "updateValues", spreadsheetId: IPA, range: "Usuários!A9:C9", values: [["n@x.com", "N", "Editor"]] }, d); } catch (e) { return e; } })();
+  T(longo.message.indexOf("\n") === -1 && longo.message.indexOf("A".repeat(60)) === -1 && longo.message.length < 320, "the reason is one line, long ids are hidden and it is truncated");
+  const semLogin = (() => { const d = makeDeps(freshState()); d.verifyToken = () => { throw new Error("UrlFetch exploded with secret internals"); }; try { return handleRequest({ token: "x", action: "me" }, d); } catch (e) { return e; } })();
+  T(!(semLogin instanceof GatewayError_) && !/Detalhe/.test(String(semLogin.message)), "before authentication nothing internal is put in a response (the outer handler answers generically)");
+  const negado = (() => { try { return handleRequest({ token: "viz", action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:B9", values: [["x"]] }, makeDeps(freshState())); } catch (e) { return e; } })();
+  T(negado instanceof GatewayError_ && negado.status === 403 && !/Detalhe/.test(negado.message), "expected refusals keep their plain message (no technical detail)");
 })();
 
 // --- access requests (anyone signed in with Google may ask; only the admin sees/answers)

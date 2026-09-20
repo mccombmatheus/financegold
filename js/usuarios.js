@@ -43,8 +43,16 @@ async function ensureUsuariosSheet(token) {
     // the admin setting up a brand-new company; a no-op for everyone else).
     const existing = await getSheetTitles(CONFIG.SPREADSHEET_ID, token);
     if (!existing.includes(USUARIOS_SHEET_NAME)) {
-      await createSheetTab(CONFIG.SPREADSHEET_ID, USUARIOS_SHEET_NAME, token);
-      await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A1:C1`, ["Email", "Nome", "Perfil"], token);
+      // Only a Master (or the admin setting up a brand-new company) may create the
+      // tab. Everyone else simply is not allowed to, and does not need to: a person
+      // who is already listed is listed IN that tab. A refusal must never lock
+      // them out of the app.
+      try {
+        await createSheetTab(CONFIG.SPREADSHEET_ID, USUARIOS_SHEET_NAME, token);
+        await updateSheetRow(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A1:C1`, ["Email", "Nome", "Perfil"], token);
+      } catch (err) {
+        if (isNetworkError(err) || err.sessionExpired) throw err;
+      }
     }
     return;
   }

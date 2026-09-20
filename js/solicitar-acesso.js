@@ -84,7 +84,7 @@ function setupSolicitarAcesso() {
       document.getElementById("btn-solicitar-verificar").hidden = false;
     } catch (err) {
       console.error(err);
-      if (!err.sessionExpired) status.textContent = `Não foi possível enviar: ${describeSaveError(err)}`;
+      if (!err.sessionExpired) status.textContent = `Não foi possível enviar: ${mensagemDoErro(err)}`;
     } finally {
       submit.disabled = false;
     }

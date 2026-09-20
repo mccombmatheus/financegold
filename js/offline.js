@@ -21,6 +21,14 @@ function describeSaveError(err) {
   return `Erro ao salvar: ${err.message}`;
 }
 
+// Just the reason, for messages that already start with their own "Erro ao ...:".
+function mensagemDoErro(err) {
+  if (isNetworkError(err)) {
+    return "Sem internet. Essa ação precisa de conexão — tente novamente quando estiver online.";
+  }
+  return err && err.message ? err.message : String(err);
+}
+
 function getQueueKey() {
   return `${OFFLINE_QUEUE_KEY_PREFIX}${CONFIG.SPREADSHEET_ID}`;
 }

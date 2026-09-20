@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Testes do cadastro de pessoas</title></head>
+<body>
+<h3 style="font-family:sans-serif">Testes do cadastro de pessoas (o código real do app conversando com o código real do servidor)</h3>
+<pre id="out">rodando…</pre>
+<script>window.addEventListener("error",function(e){document.getElementById("out").textContent="ERRO: "+e.message+" ("+String(e.filename).split("/").pop()+":"+e.lineno+")";});</script>
+<script src="../apps-script/Code.gs"></script>
+<script src="../js/config.js"></script>
+<script src="../js/sheets.js"></script>
+<script src="../js/roles.js"></script>
+<script src="../js/offline.js"></script>
+<script src="../js/usuarios.js"></script>
+<script>
+const results = [];
+const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+const IPA = Object.keys(GATEWAY_CONFIG.SPREADSHEETS)[0];
+const ADM = GATEWAY_CONFIG.ADMIN_EMAILS[0];
+const TOKENS = { mas: "mestre@x.com", edi: "editor@x.com", viz: "viz@x.com", nobody: "ninguem@x.com", adm: ADM };
+let state, deps, versaoAntiga;
+function novo() {
+  state = { [IPA]: { "Lançamento": [["h"]], Estoque: [["h"]], Usuários: [["Email", "Nome", "Perfil"], ["mestre@x.com", "Mestre", "Master"], ["editor@x.com", "Editor", "Editor"], ["viz@x.com", "Viz", "Visualizador"]] } };
+  versaoAntiga = false;
+  deps = {
+    config: GATEWAY_CONFIG,
+    verifyToken: (t) => { if (!TOKENS[t]) throw new GatewayError_(401, "Sessão expirada. Entre novamente."); return TOKENS[t]; },
+    cache: { get: () => null, put() {}, remove() {} },
+    lock: (fn) => fn(),
+    registry: { list: () => [], add() {} },
+    requests: { list: () => [], add() {}, setStatus() {} },
+    mail: { send() {} },
+    sheets: {
+      getTitles: (id) => Object.keys(state[id]),
+      getValues: (id, range) => {
+        const m = /^'?([^'!]+)'?!([A-Z]+)(\d+)(?::([A-Z]+)(\d*))?$/.exec(range); if (!m || !state[id][m[1]]) throw new Error("Unable to parse range: " + range);
+        const linhas = state[id][m[1]].slice(Number(m[3]) - 1);
+        return linhas.map((l) => l.slice(0, m[4] ? m[4].charCodeAt(0) - 64 : 1).map((c) => c));
+      },
+      updateValues: (id, range, values) => {
+        if (deps.__falha) throw new Error(deps.__falha);
+        const m = /^'?([^'!]+)'?!([A-Z]+)(\d+):([A-Z]+)(\d+)$/.exec(range); if (!m || !state[id][m[1]]) throw new Error("Unable to parse range: " + range);
+        const tab = state[id][m[1]]; const n = Number(m[3]); const c0 = m[2].charCodeAt(0) - 65;
+        while (tab.length < n) tab.push([]);
+        values[0].forEach((v, i) => { tab[n - 1][c0 + i] = v; });
+      },
+      addTab: (id, titulo) => { if (state[id][titulo]) throw new Error("already exists"); state[id][titulo] = [["Email", "Nome", "Perfil"]]; },
+    },
+  };
+}
+let netDown = false;
+window.fetch = async (url, opts) => {
+  if (netDown) throw new TypeError("Failed to fetch");
+  const body = JSON.parse(opts.body);
+  let out;
+  if (versaoAntiga && body.action === "getTitles") out = { ok: true, data: { titles: ["Lançamento", "Estoque"] } }; // an older server hid the Usuários tab from non-Masters
+  else if (versaoAntiga && body.action === "addTab" && TOKENS[body.token] !== "mestre@x.com") out = { ok: false, status: 403, error: "Você não tem permissão para esta ação." };
+  else { try { out = { ok: true, data: handleRequest(body, deps) }; } catch (e) { out = { ok: false, status: e.status || 500, error: e.message }; } }
+  return { json: async () => out };
+};
+CONFIG.GATEWAY_URL = "https://gw.test/exec"; CONFIG.SPREADSHEET_ID = IPA;
+window.handleSessionExpired = () => {};
+const lista = async (t) => (await fetchAllUsuarios(t)).map((u) => u.email);
+const rejeita = async (fn) => { try { await fn(); return null; } catch (e) { return e; } };
+
+(async () => {
+  // ---- a Master manages people
+  novo();
+  await addUsuario("nova@x.com", "Nova Pessoa", "Editor", "mas");
+  T((await lista("mas")).indexOf("nova@x.com") !== -1 && state[IPA]["Usuários"].length === 5, "a Master adds a person: the row lands right after the last one");
+  await addUsuario("outra@x.com", "Outra", "Visualizador", "mas");
+  T(state[IPA]["Usuários"].length === 6 && state[IPA]["Usuários"][5][0] === "outra@x.com" && state[IPA]["Usuários"][4][0] === "nova@x.com", "two additions in a row never overwrite each other");
+  const me1 = await gatewayCall("me", {}, "mas");
+  T(me1.companies.length === 1 && me1.companies[0].perfil === "Master", "the Master still sees the company");
+  TOKENS.nova = "nova@x.com";
+  const meNova = await gatewayCall("me", {}, "nova");
+  T(meNova.companies.length === 1 && meNova.companies[0].perfil === "Editor" && meNova.companies[0].nome === "Nova Pessoa", "the new person can sign in right away, with the chosen role and name");
+  await updateUsuarioPerfil(5, "Visualizador", "mas");
+  T((await gatewayCall("me", {}, "nova")).companies[0].perfil === "Visualizador", "changing a role takes effect immediately");
+  await updateUsuarioNome(5, "Nome Novo", "mas");
+  await updateUsuarioEmail(5, "trocado@x.com", "mas");
+  TOKENS.trocado = "trocado@x.com";
+  T((await gatewayCall("me", {}, "nova")).companies.length === 0 && (await gatewayCall("me", {}, "trocado")).companies[0].nome === "Nome Novo", "changing an e-mail moves the access to the new address (the old one is locked out)");
+  await removeUsuario(6, "mas");
+  TOKENS.outra = "outra@x.com";
+  T((await lista("mas")).indexOf("outra@x.com") === -1 && (await gatewayCall("me", {}, "outra")).companies.length === 0, "removing a person blanks the row and locks them out at once");
+  // ---- nobody else can
+  const editor = await rejeita(() => addUsuario("x@x.com", "X", "Master", "edi"));
+  T(editor && /permissão/.test(editor.message) && state[IPA]["Usuários"].length === 6, "an Editor cannot add people (refused, nothing written)");
+  const viz = await rejeita(() => removeUsuario(2, "viz"));
+  T(viz && /permissão/.test(viz.message) && state[IPA]["Usuários"][1][0] === "mestre@x.com", "a Viewer cannot remove people");
+  const promo = await rejeita(() => updateUsuarioPerfil(4, "Master", "edi"));
+  T(promo && /permissão/.test(promo.message) && state[IPA]["Usuários"][3][2] === "Visualizador", "nobody promotes themselves");
+  const estranho = await rejeita(() => addUsuario("x@x.com", "X", "Master", "nobody"));
+  T(estranho && state[IPA]["Usuários"].length === 6, "a stranger cannot add people");
+  const lerLista = await rejeita(() => fetchAllUsuarios("viz"));
+  T(lerLista && /permissão/.test(lerLista.message), "the full user list is only readable by a Master");
+  // ---- the sign-in check that every person goes through (this broke Editors/Viewers once)
+  novo();
+  const r1 = await rejeita(() => ensureUsuariosSheet("viz")); const r2 = await rejeita(() => ensureUsuariosSheet("edi"));
+  T(r1 === null && r2 === null && state[IPA]["Usuários"].length === 4, "a Viewer and an Editor pass the sign-in tab check without touching anything");
+  versaoAntiga = true;
+  const r3 = await rejeita(() => ensureUsuariosSheet("viz")); const r4 = await rejeita(() => ensureUsuariosSheet("edi"));
+  T(r3 === null && r4 === null, "even against a server that hides the Usuários tab from them, sign-in is not blocked when the tab creation is refused");
+  const u = await fetchUsuario("viz@x.com", "viz");
+  T(u && u.perfil === "Visualizador" && u.nome === "Viz", "…and the Viewer's own profile is found");
+  versaoAntiga = false;
+  delete state[IPA]["Usuários"]; state[IPA]["Usuários"] = undefined; delete state[IPA]["Usuários"];
+  await ensureUsuariosSheet("mas").catch(() => {});
+  T(state[IPA]["Usuários"] === undefined || state[IPA]["Usuários"].length >= 1, "a company without the tab: only setting-up roles may create it (no crash otherwise)");
+  // ---- a failure on the server side is explained, not hidden
+  novo();
+  deps.__falha = "API call to sheets.spreadsheets.values.update failed with error: The caller does not have permission";
+  const falha = await rejeita(() => addUsuario("nova@x.com", "Nova", "Editor", "mas"));
+  T(falha && /não tem permissão de edição nesta planilha/.test(falha.message) && falha.message.indexOf(CONFIG.CONTA_DO_SISTEMA) !== -1 && /does not have permission/.test(falha.message), "when the script account cannot edit the sheet, the person is told exactly that (and whom to ask)");
+  deps.__falha = "Range ('Usuários'!A1002:C1002) exceeds grid limits. Max rows: 1001, max columns: 26";
+  const cheia = await rejeita(() => addUsuario("nova@x.com", "Nova", "Editor", "mas"));
+  T(cheia && /limite de linhas/.test(cheia.message), "a full tab is explained in plain words");
+  deps.__falha = "Unable to parse range: Usuários!A2:C";
+  const semAba = await rejeita(() => addUsuario("nova@x.com", "Nova", "Editor", "mas"));
+  T(semAba && /não encontrou a planilha ou a aba/.test(semAba.message), "a missing tab is explained in plain words");
+  deps.__falha = null;
+  T(mensagemDoErro(new Error("Falhou")) === "Falhou" && /Sem internet/.test(mensagemDoErro(new TypeError("x"))), "screen messages carry just the reason (no doubled 'Erro ao salvar: Erro ao salvar:')");
+  T(traduzirErroDoServidor("Você não tem permissão para esta ação.") === "Você não tem permissão para esta ação.", "ordinary refusals are left as they are");
+  // ---- offline
+  novo(); netDown = true;
+  const off = await rejeita(() => addUsuario("nova@x.com", "Nova", "Editor", "mas"));
+  T(off instanceof TypeError, "offline, adding a person fails as a network error (never as a fake success)");
+  netDown = false;
+
+  const falhas = results.filter((r) => r.indexOf("FAIL") === 0);
+  document.getElementById("out").textContent = results.join("\n") + "\n\nTOTAL " + results.length + "  FAILED " + falhas.length;
+})().catch((e) => { document.getElementById("out").textContent = "CRASH " + e.stack; });
+</script></body></html>

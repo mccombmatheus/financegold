@@ -3,9 +3,17 @@ let usuariosAdminFormReady = false;
 let usuarioEditingLinha = null;
 let usuarioRemoveConfirmLinha = null;
 
+// A failure is shown in the danger colour (it used to look just like a hint).
+function marcarStatusDeErro(el, texto) {
+  el.classList.toggle("status-erro", /^(Erro|Não foi possível|Informe|Preencha|Esse e-mail)/.test(texto || ""));
+}
+
 function usuariosAdminStatus(message) {
   const el = document.getElementById("usuarios-admin-status");
-  if (el) el.textContent = message || "";
+  if (el) {
+    el.textContent = message || "";
+    marcarStatusDeErro(el, message);
+  }
 }
 
 function looksLikeEmail(value) {
@@ -48,7 +56,7 @@ async function saveUsuarioEdit(usuario, nome, email) {
     usuariosAdminStatus("Alterações salvas.");
   } catch (err) {
     console.error(err);
-    usuariosAdminStatus(`Erro ao salvar: ${describeSaveError(err)}`);
+    usuariosAdminStatus(`Erro ao salvar: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -61,7 +69,7 @@ async function confirmUsuarioRemoval(usuario) {
     usuariosAdminStatus(`${usuario.nome || usuario.email} não tem mais acesso.`);
   } catch (err) {
     console.error(err);
-    usuariosAdminStatus(`Erro ao remover: ${describeSaveError(err)}`);
+    usuariosAdminStatus(`Erro ao remover: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -89,7 +97,7 @@ function buildPerfilSelect(usuario) {
       usuariosAdminStatus("Perfil atualizado.");
     } catch (err) {
       console.error(err);
-      usuariosAdminStatus(`Erro ao salvar: ${describeSaveError(err)}`);
+      usuariosAdminStatus(`Erro ao salvar: ${mensagemDoErro(err)}`);
       select.value = previous;
     } finally {
       select.disabled = false;
@@ -221,19 +229,23 @@ function setupUsuarioAddForm() {
 
     if (!email || !nome) {
       statusEl.textContent = "Preencha e-mail e nome.";
+      marcarStatusDeErro(statusEl, statusEl.textContent);
       return;
     }
     if (!looksLikeEmail(email)) {
       statusEl.textContent = "Informe um e-mail válido.";
+      marcarStatusDeErro(statusEl, statusEl.textContent);
       return;
     }
     if (allUsuariosAdmin.some((u) => mesmoEmail(u.email, email))) {
       statusEl.textContent = "Esse e-mail já está cadastrado.";
+      marcarStatusDeErro(statusEl, statusEl.textContent);
       return;
     }
 
     submitButton.disabled = true;
     statusEl.textContent = "Salvando...";
+    marcarStatusDeErro(statusEl, "");
     try {
       await addUsuario(email, nome, perfil, accessToken);
       statusEl.textContent = CONFIG.GATEWAY_URL
@@ -244,8 +256,9 @@ function setupUsuarioAddForm() {
       await refreshUsuariosAdmin();
     } catch (err) {
       console.error(err);
-      statusEl.textContent = `Erro ao salvar: ${err.message}`;
+      statusEl.textContent = `Erro ao salvar: ${mensagemDoErro(err)}`;
     } finally {
+      marcarStatusDeErro(statusEl, statusEl.textContent);
       submitButton.disabled = false;
     }
   });

@@ -174,7 +174,7 @@ async function salvarConexao() {
     setTimeout(recarregarPagina, 900);
   } catch (err) {
     console.error(err);
-    conectarStatus(`Não foi possível salvar: ${describeSaveError(err)}`);
+    conectarStatus(`Não foi possível salvar: ${mensagemDoErro(err)}`);
   }
 }
 
@@ -256,7 +256,7 @@ function initConectar() {
       await analisarPlanilha();
     } catch (err) {
       console.error(err);
-      conectarStatus(`Não foi possível analisar: ${describeSaveError(err)}`);
+      conectarStatus(`Não foi possível analisar: ${mensagemDoErro(err)}`);
     } finally {
       btn.disabled = false;
     }

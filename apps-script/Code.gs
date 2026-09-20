@@ -42,7 +42,7 @@ const GATEWAY_CONFIG = {
 
 // Shown by the public banner (a GET on the /exec URL) so it is easy to confirm
 // which version of this file is really deployed.
-const GATEWAY_VERSION = "2026-09-20-emails-tolerantes";
+const GATEWAY_VERSION = "2026-09-20-cadastro-de-pessoas";
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
@@ -472,6 +472,25 @@ function companyMap_(deps) {
 function handleRequest(body, deps) {
   if (!body || typeof body !== "object") throw new GatewayError_(400, "Requisição inválida.");
   const email = deps.verifyToken(body.token);
+  try {
+    return despachar_(body, deps, email);
+  } catch (err) {
+    if (err instanceof GatewayError_) throw err;
+    console.error(err);
+    // Only reached AFTER the caller proved who they are: a short, sanitised reason
+    // (e.g. "The caller does not have permission") makes real problems diagnosable
+    // instead of a blank "internal error".
+    throw new GatewayError_(500, "Erro interno no servidor do app. Detalhe: " + detalheSeguro_(err));
+  }
+}
+
+function detalheSeguro_(err) {
+  let texto = String(err && err.message ? err.message : err);
+  texto = texto.replace(/[\r\n]+/g, " ").replace(/[A-Za-z0-9_-]{40,}/g, "…").trim();
+  return texto.length > 220 ? texto.slice(0, 220) + "…" : texto;
+}
+
+function despachar_(body, deps, email) {
   const action = body.action;
 
   if (action === "me") return actionMe_(deps, email);
@@ -512,6 +531,7 @@ function titlesFor_(deps, access, spreadsheet, spreadsheetId) {
   const cfg = loadConfigTabs_(deps, spreadsheetId);
   return all.filter(
     (t) =>
+      t === USUARIOS_TAB || // its existence is not a secret (the app checks it at every sign-in); its CONTENT stays Master-only
       READ_TABS.indexOf(t) !== -1 ||
       t === spreadsheet.sheetName ||
       t === CONFIG_TAB ||
