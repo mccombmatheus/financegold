@@ -30,8 +30,7 @@ const TENANTS = {
 // access over a casing mismatch (matches the normalization already used in
 // js/usuarios.js's fetchUsuario).
 function lookupTenants(email) {
-  const normalized = (email || "").trim().toLowerCase();
-  const match = Object.keys(TENANTS).find((key) => key.toLowerCase() === normalized);
+  const match = Object.keys(TENANTS).find((key) => mesmoEmail(key, email));
   return match ? TENANTS[match] : undefined;
 }
 

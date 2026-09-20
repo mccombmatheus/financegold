@@ -70,3 +70,14 @@ Quem entra com uma conta Google que ainda não tem acesso vê um formulário par
 - Ao criar uma empresa, o administrador do sistema **não entra nela** a menos que marque a caixa de suporte.
 - Pedidos de quem diz trabalhar em uma empresa que já existe são **encaminhados por e-mail ao Master dessa empresa**, que cadastra a pessoa no próprio perfil.
 - Para usar uma conta de desenvolvedor separada da pessoal: coloque o e-mail dela em `ADMIN_EMAILS`, faça o login com ela (cai direto no Painel do sistema) e, depois de conferir, tire o e-mail pessoal da lista.
+
+
+## "Meu e-mail está liberado, mas não consigo entrar" — como descobrir o motivo
+
+1. Abra o projeto no Apps Script (script.google.com).
+2. No começo do `Código.gs`, ache a linha `const EMAIL_PARA_TESTAR = "...";` e coloque o e-mail da pessoa. Salve.
+3. No topo, escolha a função `diagnostico_acesso` e clique em **Executar**.
+4. Em **Registro de execução**, aparece cada empresa com todas as linhas da aba Usuários. A linha certa mostra `<-- É ESTE`. Se ela não aparece, o registro mostra linhas `MUITO PARECIDO` (erro de digitação) e caracteres invisíveis.
+5. Não publique essa alteração no GitHub: é só para você olhar.
+
+O app já ignora diferenças de maiúsculas, espaços, pontos e "+algo" em e-mails do Gmail (a Google trata `maria.teste@gmail.com` e `mariateste@gmail.com` como a mesma conta).

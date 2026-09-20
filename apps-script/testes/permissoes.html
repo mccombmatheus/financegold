@@ -339,6 +339,111 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   T(!step("edi", { action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:A9", values: [["a"], ["b"]] }).ok && !step("edi", { action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:A9", values: "a" }).ok, "only ONE row per write");
 })();
 
+
+// --- e-mails typed in the Usuários tab in different ways still match the same person
+(function () {
+  const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+  // canonical key: what counts as the same address
+  const c = canonEmail_;
+  T(c("Maria.Teste@GMAIL.com") === "mariateste@gmail.com" && c("mariateste@gmail.com") === "mariateste@gmail.com", "Gmail: capital letters and dots do not matter");
+  T(c("maria.teste+ipanema@gmail.com") === "mariateste@gmail.com" && c("m.a.r.i.a@googlemail.com") === "maria@gmail.com", "Gmail: +tags are dropped and googlemail.com = gmail.com");
+  T(c("  mariateste@gmail.com \u00a0") === "mariateste@gmail.com" && c("maria\u200bteste@gmail.com") === "mariateste@gmail.com", "spaces, non-breaking spaces and zero-width characters are ignored");
+  T(c("\u200bmariateste@gmail.com\ufeff") === "mariateste@gmail.com" && c("mailto:Mariateste@gmail.com") === "mariateste@gmail.com" && c("Maria <mariateste@gmail.com>") === "mariateste@gmail.com", "BOM, zero-width space, 'mailto:' and '<...>' are stripped");
+  T(c("ｍａｒｉａｔｅｓｔｅ@gmail.com") === "mariateste@gmail.com", "full-width letters (copied from some apps) are normalised");
+  T(c("ana.silva@empresa.com.br") !== c("anasilva@empresa.com.br") && c("ana+x@empresa.com.br") !== c("ana@empresa.com.br"), "OTHER domains: dots and +tags stay significant (only Gmail is folded)");
+  T(c("mariateste2@gmail.com") !== c("mariateste@gmail.com") && c("mariatest@gmail.com") !== c("mariateste@gmail.com"), "a different name is never a match");
+  T(c("m\u0430riateste@gmail.com") !== c("mariateste@gmail.com"), "a look-alike (Cyrillic 'а') is NOT the same address");
+  T(c("mariateste@gmail.com.evil.com") !== c("mariateste@gmail.com") && c("evil.com@gmail.com") !== c("evilcom@evil.com"), "domains are compared whole");
+  T(c(null) === "" && c(5) === "" && c({}) === "" && c("") === "" && c("sem-arroba") === "sem-arroba", "odd inputs never crash");
+
+  // end to end through the gateway
+  const casos = [
+    ["typed with capitals + dots differently", "Maria.Teste@Gmail.com", "mariateste@gmail.com"],
+    ["typed with a trailing space", "mariateste@gmail.com ", "mariateste@gmail.com"],
+    ["typed with a non-breaking space", "mariateste@gmail.com\u00a0", "mariateste@gmail.com"],
+    ["typed with a zero-width space", "maria\u200bteste@gmail.com", "mariateste@gmail.com"],
+    ["typed as mailto:", "mailto:mariateste@gmail.com", "mariateste@gmail.com"],
+    ["typed with a +tag", "mariateste+ipanema@gmail.com", "mariateste@gmail.com"],
+    ["Google signs in as maria.teste@ but the list says mariateste@", "mariateste@gmail.com", "maria.teste@gmail.com"],
+    ["googlemail.com in the list", "mariateste@googlemail.com", "mariateste@gmail.com"],
+  ];
+  casos.forEach(([nome, naLista, doGoogle]) => {
+    const state = freshState();
+    state[IPA]["Usuários"].push([naLista, "Maria", "Visualizador"]);
+    TOKENS.maria = doGoogle;
+    const d = makeDeps(state);
+    let me; try { me = handleRequest({ token: "maria", action: "me" }, d); } catch (e) { me = { erro: e.message }; }
+    const ok = me.companies && me.companies.some((x) => x.spreadsheetId === IPA && x.perfil === "Visualizador");
+    T(ok, "access works when the e-mail is " + nome);
+    let lido = null; try { lido = handleRequest({ token: "maria", action: "getValues", spreadsheetId: IPA, range: "Estoque!A1:B2" }, d); } catch (e) { lido = null; }
+    T(ok && lido !== null, "…and she can read the company's data (" + nome + ")");
+  });
+  // three authorised people, the third with a slightly different spelling: all three get in, nobody else
+  (function () {
+    const state = freshState();
+    state[IPA]["Usuários"] = [["Email", "Nome", "Perfil"], ["dono@ipanema.com", "Dono", "Master"], ["Editor.Um@gmail.com", "Editor", "Editor"], [" Maria.Teste@gmail.com ", "Maria", "Visualizador"]];
+    Object.assign(TOKENS, { dono3: "dono@ipanema.com", edi3: "editorum@gmail.com", sar3: "mariateste@gmail.com", out3: "mariateste2@gmail.com", out4: "dono@ipanema.com.br" });
+    const quem = (t) => { try { const m = handleRequest({ token: t, action: "me" }, makeDeps(state)); return m.companies.filter((x) => x.spreadsheetId === IPA).map((x) => x.perfil)[0] || null; } catch (e) { return "ERRO"; } };
+    T(quem("dono3") === "Master" && quem("edi3") === "Editor" && quem("sar3") === "Visualizador", "the three authorised e-mails all get in with their own role");
+    T(quem("out3") === null && quem("out4") === null, "a near-miss address (extra digit, other domain) still gets nothing");
+  })();
+  // no privilege escalation through the folding
+  (function () {
+    const state = freshState();
+    Object.assign(TOKENS, { atac: "outro.nome@gmail.com" });
+    const m = (() => { try { return handleRequest({ token: "atac", action: "me" }, makeDeps(state)); } catch (e) { return { companies: ["ERRO"] }; } })();
+    T(m.companies.length === 0, "a stranger's Gmail matches nobody by accident");
+    const admin2 = makeDeps(state);
+    admin2.config = Object.assign({}, GATEWAY_CONFIG, { ADMIN_EMAILS: ["Fina.Ponto@gmail.com"] });
+    Object.assign(TOKENS, { fp: "finaponto@gmail.com", fp2: "fina.ponto+x@googlemail.com" });
+    const sup = (t) => { try { return handleRequest({ token: t, action: "me" }, admin2).superAdmin; } catch (e) { return "ERRO"; } };
+    T(sup("fp") === true, "the system admin is recognised with the same folding (dots/case)");
+    T(sup("atac") === false, "…and nobody else becomes admin");
+  })();
+  // requests: the duplicate / cool-down rules use the same key
+  (function () {
+    const state = freshState();
+    Object.assign(TOKENS, { r1: "pessoa.nova@gmail.com", r2: "pessoanova@gmail.com" });
+    const deps = makeDeps(state);
+    const pedido = (t) => { try { return handleRequest({ token: t, action: "requestAccess", nome: "Pessoa", empresa: "Empresa X", tipo: "nova" }, deps); } catch (e) { return { erro: e.status }; } };
+    const a = pedido("r1"); const b = pedido("r2");
+    T(a.duplicate === false && (b.erro === 429 || b.duplicate === true), "the same Gmail typed two ways cannot flood requests (cool-down / one pending per person)");
+  })();
+  // Master-only writes still use the folded comparison for the bootstrap row
+  (function () {
+    const state = freshState();
+    Object.assign(TOKENS, { adm2: ADMIN_EMAIL.replace(/^(.)/, "$1") });
+    const row = [ADMIN_EMAIL.toUpperCase(), "Admin", "Master"];
+    const r = (() => { try { return handleRequest({ token: "adm2", action: "updateValues", spreadsheetId: CAR, range: "Usuários!A2:C2", values: [row] }, makeDeps(state)); } catch (e) { return { erro: e.status }; } })();
+    T(r.erro === undefined || r.erro === 403, "bootstrap of a new company is still restricted to the admin's own row (no crash with odd capitalisation)");
+  })();
+})();
+
+
+// --- the editor-only diagnostic function ("why can't this person get in?")
+(function () {
+  const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+  const linhasDoLog = [];
+  const consoleOriginal = console.log;
+  const IDA = Object.keys(GATEWAY_CONFIG.SPREADSHEETS)[0];
+  const tabelas = {};
+  tabelas[IDA] = [["Maria.Teste@gmail.com\u200b", "Maria", "Visualizador"], ["  dono@x.com ", "Dono", "Master"], ["mariateste2@gmail.com", "Outra", ""], [42, "Numero", ""]];
+  window.CacheService = { getScriptCache: () => ({ get: () => null, put() {}, remove() {} }) };
+  window.PropertiesService = { getScriptProperties: () => ({ getProperty: () => null, setProperty() {} }) };
+  window.Sheets = { Spreadsheets: { Values: { get: (id) => { if (!tabelas[id]) throw new Error("Unable to parse range"); return { values: tabelas[id] }; } } } };
+  console.log = (t) => linhasDoLog.push(String(t));
+  let erro = null;
+  try { diagnostico_acesso(); } catch (e) { erro = e; }
+  console.log = consoleOriginal;
+  const log = linhasDoLog.join("\n");
+  T(erro === null, "diagnostico_acesso runs without errors");
+  T(log.indexOf("mariateste@gmail.com") !== -1 && /É ESTE/.test(log), "the diagnostic finds the row that matches (dots/case/invisible character) and says so");
+  T(/U\+200B/.test(log), "it reveals the invisible character hidden in the cell");
+  T(/MUITO PARECIDO/.test(log), "it flags a near-miss address (typo) as a likely cause");
+  T(/a coluna A não é texto: 42/.test(log), "it flags a row whose e-mail cell is not text");
+  T(/RESULTADO: o e-mail ESTÁ liberado/.test(log) && /Não consegui ler a aba Usuários/.test(log), "it reports per company: found, and a readable error for a company whose tab is unreadable");
+})();
+
 // --- access requests (anyone signed in with Google may ask; only the admin sees/answers)
 (function () {
   const state = freshState();

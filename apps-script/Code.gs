@@ -42,7 +42,7 @@ const GATEWAY_CONFIG = {
 
 // Shown by the public banner (a GET on the /exec URL) so it is easy to confirm
 // which version of this file is really deployed.
-const GATEWAY_VERSION = "2026-09-20-planilhas-adaptaveis";
+const GATEWAY_VERSION = "2026-09-20-emails-tolerantes";
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
@@ -174,6 +174,63 @@ function diagnostico_migracao() {
   });
   const registryId = PropertiesService.getScriptProperties().getProperty(REGISTRY_PROP);
   if (registryId) console.log("Planilha do registro (transferir também): " + link(registryId));
+}
+
+// Run this from the Apps Script editor (it is NOT reachable through the web app)
+// when someone says "my e-mail is authorised but I cannot get in". Put their
+// address below, choose this function and press Run: the log shows, for each
+// company, every row of the Usuários tab, how each e-mail was understood, whether
+// it matches, near-misses (typos) and invisible characters.
+const EMAIL_PARA_TESTAR = "mariateste@gmail.com";
+
+function distanciaEdicao_(a, b) {
+  if (a === b) return 0;
+  let anterior = [];
+  for (let j = 0; j <= b.length; j += 1) anterior.push(j);
+  for (let i = 1; i <= a.length; i += 1) {
+    const atual = [i];
+    for (let j = 1; j <= b.length; j += 1) atual.push(Math.min(atual[j - 1] + 1, anterior[j] + 1, anterior[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)));
+    anterior = atual;
+  }
+  return anterior[b.length];
+}
+
+function diagnostico_acesso() {
+  const deps = realDeps_();
+  const alvo = canonEmail_(EMAIL_PARA_TESTAR);
+  console.log("E-mail testado: " + EMAIL_PARA_TESTAR + "  (comparado como: " + alvo + ")");
+  console.log("Versão do servidor: " + GATEWAY_VERSION);
+  const empresas = companyMap_(deps);
+  Object.keys(empresas).forEach((id) => {
+    console.log("== " + empresas[id].empresa + " (" + id + ")");
+    let rows;
+    try {
+      rows = Sheets.Spreadsheets.Values.get(id, USUARIOS_TAB + "!A2:C", { valueRenderOption: "UNFORMATTED_VALUE" }).values || [];
+    } catch (err) {
+      console.log("   Não consegui ler a aba Usuários desta planilha: " + err.message);
+      return;
+    }
+    console.log("   " + rows.length + " linha(s) na aba Usuários.");
+    let achou = false;
+    rows.forEach((row, i) => {
+      const cru = row[0];
+      const n = i + 2;
+      if (typeof cru !== "string" || !cru.trim()) {
+        if (cru !== undefined && cru !== "") console.log("   linha " + n + ": a coluna A não é texto: " + JSON.stringify(cru));
+        return;
+      }
+      const chave = canonEmail_(cru);
+      const igual = chave === alvo;
+      if (igual) achou = true;
+      const estranhos = cru.split("").filter((c) => !/[\x21-\x7e]/.test(c)).map((c) => "U+" + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0"));
+      let nota = "";
+      if (igual) nota += "   <-- É ESTE (libera o acesso)";
+      else if (distanciaEdicao_(chave, alvo) <= 2) nota += "   <-- MUITO PARECIDO: confira se há erro de digitação";
+      if (estranhos.length) nota += "   [caracteres invisíveis ou fora do comum: " + estranhos.join(" ") + "]";
+      console.log("   linha " + n + ": \"" + cru + "\"  perfil=" + (row[2] ? row[2] : "(vazio: vale Visualizador)") + nota);
+    });
+    console.log("   RESULTADO: " + (achou ? "o e-mail ESTÁ liberado nesta empresa." : "o e-mail NÃO está nesta empresa."));
+  });
 }
 
 function realDeps_() {
@@ -468,12 +525,46 @@ function denied_() {
   return new GatewayError_(403, "Você não tem permissão para esta ação.");
 }
 
+// ---------------------------------------------------------------------------
+// E-mails. The same person can be typed in the Usuários tab in many ways: capital
+// letters, a stray space or invisible character copied from a chat/e-mail,
+// "mailto:", "<a@b.com>", or — for Gmail — with dots in other places
+// (maria.teste@ = mariateste@ = Maria.Teste@GMAIL.com: Google treats them
+// as ONE account, and googlemail.com is the same as gmail.com). Access is decided
+// by a canonical key, so a correct-looking entry never locks someone out.
+// Only Gmail is folded like that; on any other domain dots stay significant.
+// ---------------------------------------------------------------------------
+
+function limparEmail_(valor) {
+  if (typeof valor !== "string") return "";
+  let v = valor.normalize ? valor.normalize("NFKC") : valor;
+  v = v.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\u00A0/g, " ").trim().toLowerCase();
+  v = v.replace(/^mailto:/, "");
+  const entre = v.match(/<([^<>\s]+@[^<>\s]+)>/);
+  if (entre) v = entre[1];
+  return v.trim();
+}
+
+function canonEmail_(valor) {
+  const v = limparEmail_(valor);
+  const arroba = v.lastIndexOf("@");
+  if (arroba < 1) return v;
+  let local = v.slice(0, arroba);
+  let dominio = v.slice(arroba + 1);
+  if (dominio === "gmail.com" || dominio === "googlemail.com") {
+    local = local.split("+")[0].replace(/\./g, "");
+    dominio = "gmail.com";
+  }
+  return local + "@" + dominio;
+}
+
 function normalizeRole_(value) {
   return VALID_ROLES.indexOf(value) !== -1 ? value : ROLE_VISUALIZADOR;
 }
 
 function isAdminEmail_(deps, email) {
-  return deps.config.ADMIN_EMAILS.some((a) => String(a).trim().toLowerCase() === email);
+  const chave = canonEmail_(email);
+  return deps.config.ADMIN_EMAILS.some((a) => canonEmail_(a) === chave);
 }
 
 // Reads a company's Usuários tab (short cache). null = the tab doesn't exist.
@@ -493,10 +584,11 @@ function loadUsuarios_(deps, spreadsheetId) {
   }
   const usuarios = [];
   rows.forEach((row, index) => {
-    if (typeof row[0] !== "string" || !row[0].trim()) return;
+    if (typeof row[0] !== "string" || !limparEmail_(row[0])) return;
     usuarios.push({
       linha: index + 2,
-      email: row[0].trim().toLowerCase(),
+      email: limparEmail_(row[0]),
+      chave: canonEmail_(row[0]),
       nome: row[1] ? String(row[1]) : "",
       perfil: normalizeRole_(row[2]),
     });
@@ -531,7 +623,8 @@ function loadConfigTabs_(deps, spreadsheetId) {
 
 function getAccess_(deps, email, spreadsheetId) {
   const usuarios = loadUsuarios_(deps, spreadsheetId);
-  const entry = usuarios ? usuarios.filter((u) => u.email === email)[0] : null;
+  const chave = canonEmail_(email);
+  const entry = usuarios ? usuarios.filter((u) => (u.chave || canonEmail_(u.email)) === chave)[0] : null;
   const empty = usuarios === null || usuarios.length === 0;
   return {
     entry: entry || null,
@@ -572,7 +665,7 @@ function actionMe_(deps, email) {
     result.pedidosPendentes = deps.requests.list().filter((r) => r.status === "Pendente").length;
   }
   if (companies.length === 0 && bootstrap.length === 0 && deps.requests) {
-    const mine = deps.requests.list().filter((r) => r.email === email);
+    const mine = deps.requests.list().filter((r) => canonEmail_(r.email) === canonEmail_(email));
     const last = mine[mine.length - 1];
     if (last) result.pedido = { status: last.status, empresa: last.empresa, data: last.data };
   }
@@ -585,7 +678,7 @@ function actionMe_(deps, email) {
 function actionCreateCompany_(deps, email, body) {
   if (!isAdminEmail_(deps, email)) throw denied_();
   const nome = typeof body.nome === "string" ? body.nome.trim() : "";
-  const ownerEmail = typeof body.ownerEmail === "string" ? body.ownerEmail.trim().toLowerCase() : "";
+  const ownerEmail = limparEmail_(body.ownerEmail);
   const ownerNome = typeof body.ownerNome === "string" ? body.ownerNome.trim() : "";
   if (body.segmento !== undefined && (typeof body.segmento !== "string" || !Object.prototype.hasOwnProperty.call(SEGMENTOS, body.segmento))) {
     throw new GatewayError_(400, "Segmento inválido.");
@@ -607,7 +700,7 @@ function actionCreateCompany_(deps, email, body) {
     const rows = [[ownerEmail, ownerNome, ROLE_MASTER]];
     // Separation of duties: the system administrator only enters a company's
     // data if they explicitly ask for it (support). Default: not a member.
-    if (body.incluirMeuAcesso === true && email !== ownerEmail) rows.push([email, "Administrador do sistema", ROLE_MASTER]);
+    if (body.incluirMeuAcesso === true && canonEmail_(email) !== canonEmail_(ownerEmail)) rows.push([email, "Administrador do sistema", ROLE_MASTER]);
     rows.forEach((row, i) => {
       deps.sheets.updateValues(spreadsheetId, USUARIOS_TAB + "!A" + (i + 2) + ":C" + (i + 2), [row]);
     });
@@ -639,12 +732,12 @@ function actionRequestAccess_(deps, email, body) {
   if (!empresa) throw new GatewayError_(400, "Informe o nome da empresa.");
   if (!tipo) throw new GatewayError_(400, "Escolha o tipo de pedido.");
 
-  const cooldownKey = "reqcool_" + email;
+  const cooldownKey = "reqcool_" + canonEmail_(email);
   if (deps.cache.get(cooldownKey)) throw new GatewayError_(429, "Aguarde um minuto antes de enviar outro pedido.");
 
   return deps.lock(() => {
     const all = deps.requests.list();
-    if (all.some((r) => r.email === email && r.status === "Pendente")) return { duplicate: true };
+    if (all.some((r) => canonEmail_(r.email) === canonEmail_(email) && r.status === "Pendente")) return { duplicate: true };
     if (all.filter((r) => r.status === "Pendente").length >= MAX_PENDING_REQUESTS) {
       throw new GatewayError_(503, "Muitos pedidos em análise. Tente mais tarde.");
     }
@@ -892,7 +985,7 @@ function canWriteUsuarios_(access, email, parsed, row) {
     return (
       /^A[0-9]+:C[0-9]+$/.test(parsed.cells) &&
       row.length === 3 &&
-      String(row[0]).trim().toLowerCase() === email &&
+      canonEmail_(row[0]) === canonEmail_(email) &&
       row[2] === ROLE_MASTER
     );
   }

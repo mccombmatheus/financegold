@@ -18,7 +18,7 @@ function showSolicitarAcessoScreen(email, pedido) {
   setupSolicitarAcesso();
 
   document.getElementById("solicitar-lede").textContent =
-    `Você entrou como ${email}, mas essa conta ainda não tem acesso a nenhuma empresa.`;
+    `Você entrou como ${email}, mas essa conta ainda não tem acesso a nenhuma empresa. Se o administrador diz que já liberou você, confira se ele cadastrou exatamente este e-mail: você pode estar entrando com outra conta Google (toque em Sair e escolha a conta certa).`;
   document.getElementById("solicitar-status").textContent = "";
   const form = document.getElementById("solicitar-form");
   const verificar = document.getElementById("btn-solicitar-verificar");

@@ -1,5 +1,37 @@
 const USUARIOS_SHEET_NAME = "Usuários";
 
+// Same rules as the gateway (apps-script/Code.gs, canonEmail_): the same person
+// may be typed with capital letters, stray/invisible characters, "mailto:", or —
+// for Gmail — with the dots in other places; those must count as one address.
+// Only Gmail is folded; on any other domain dots stay significant.
+function limparEmailTexto(valor) {
+  if (typeof valor !== "string") return "";
+  let v = valor.normalize("NFKC");
+  v = v.replace(/[\u200B-\u200D\u2060\uFEFF]/g, "").replace(/\u00A0/g, " ").trim().toLowerCase();
+  v = v.replace(/^mailto:/, "");
+  const entre = v.match(/<([^<>\s]+@[^<>\s]+)>/);
+  if (entre) v = entre[1];
+  return v.trim();
+}
+
+function canonicalizarEmail(valor) {
+  const v = limparEmailTexto(valor);
+  const arroba = v.lastIndexOf("@");
+  if (arroba < 1) return v;
+  let local = v.slice(0, arroba);
+  let dominio = v.slice(arroba + 1);
+  if (dominio === "gmail.com" || dominio === "googlemail.com") {
+    local = local.split("+")[0].replace(/\./g, "");
+    dominio = "gmail.com";
+  }
+  return `${local}@${dominio}`;
+}
+
+function mesmoEmail(a, b) {
+  const chave = canonicalizarEmail(a);
+  return chave !== "" && chave === canonicalizarEmail(b);
+}
+
 // Creates the "Usuários" tab (Email, Nome, Perfil) in the current company's
 // spreadsheet the first time it's needed, and upgrades a pre-existing
 // 2-column version (from before roles existed) in place.
@@ -62,10 +94,9 @@ async function fetchUsuario(email, token) {
   const rows = await fetchSheetValues(CONFIG.SPREADSHEET_ID, `${USUARIOS_SHEET_NAME}!A2:C`, token, {
     valueRenderOption: "UNFORMATTED_VALUE",
   });
-  const normalized = email.trim().toLowerCase();
   let found = null;
   rows.forEach((row, index) => {
-    if (typeof row[0] === "string" && row[0].trim().toLowerCase() === normalized) {
+    if (typeof row[0] === "string" && mesmoEmail(row[0], email)) {
       found = {
         linha: index + 2,
         nome: row[1] ? String(row[1]) : "",
@@ -85,8 +116,7 @@ async function isEmailListedInCompany(spreadsheetId, email, token) {
   const rows = await fetchSheetValues(spreadsheetId, `${USUARIOS_SHEET_NAME}!A2:A`, token, {
     valueRenderOption: "UNFORMATTED_VALUE",
   });
-  const normalized = email.trim().toLowerCase();
-  return rows.some((row) => typeof row[0] === "string" && row[0].trim().toLowerCase() === normalized);
+  return rows.some((row) => typeof row[0] === "string" && mesmoEmail(row[0], email));
 }
 
 async function fetchAllUsuarios(token) {

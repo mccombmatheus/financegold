@@ -13,7 +13,7 @@ function looksLikeEmail(value) {
 }
 
 function isCurrentUser(usuario) {
-  return (usuario.email || "").trim().toLowerCase() === (currentEmail || "").trim().toLowerCase();
+  return mesmoEmail(usuario.email || "", currentEmail || "");
 }
 
 function countMasters() {
@@ -35,7 +35,7 @@ async function saveUsuarioEdit(usuario, nome, email) {
   if (!novoNome) return usuariosAdminStatus("Informe o nome.");
   if (!looksLikeEmail(novoEmail)) return usuariosAdminStatus("Informe um e-mail válido.");
   const emailTaken = allUsuariosAdmin.some(
-    (u) => u.linha !== usuario.linha && u.email.trim().toLowerCase() === novoEmail.toLowerCase()
+    (u) => u.linha !== usuario.linha && mesmoEmail(u.email, novoEmail)
   );
   if (emailTaken) return usuariosAdminStatus("Esse e-mail já está cadastrado.");
 
@@ -227,7 +227,7 @@ function setupUsuarioAddForm() {
       statusEl.textContent = "Informe um e-mail válido.";
       return;
     }
-    if (allUsuariosAdmin.some((u) => u.email.trim().toLowerCase() === email.toLowerCase())) {
+    if (allUsuariosAdmin.some((u) => mesmoEmail(u.email, email))) {
       statusEl.textContent = "Esse e-mail já está cadastrado.";
       return;
     }
