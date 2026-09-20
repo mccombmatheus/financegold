@@ -24,7 +24,9 @@ async function gatewayCall(action, params, token) {
     throw expired;
   }
   if (!payload || payload.ok !== true) {
-    throw new Error(traduzirErroDoServidor((payload && payload.error) || "Erro no servidor do app."));
+    const falha = new Error(traduzirErroDoServidor((payload && payload.error) || "Erro no servidor do app."));
+    falha.status = payload && payload.status;
+    throw falha;
   }
   return payload.data;
 }

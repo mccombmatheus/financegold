@@ -83,6 +83,13 @@ function requestAccessToken() {
 
 async function getTokenScopes(token) {
   const response = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
+  // 4xx = Google says the token is not valid (null). 5xx / 429 = Google is having a
+  // moment: that is NOT a reason to sign the person out, so it is reported as a failure to retry.
+  if (response.status >= 500 || response.status === 429) {
+    const falha = new Error(`O Google não respondeu agora (${response.status}).`);
+    falha.status = response.status;
+    throw falha;
+  }
   if (!response.ok) return null;
   const data = await response.json();
   return data.scope || "";
@@ -102,7 +109,9 @@ async function fetchUserEmail(token) {
   });
   if (!response.ok) {
     const errorBody = await response.text();
-    throw new Error(`Falha ao identificar a conta Google (${response.status}): ${errorBody}`);
+    const falha = new Error(`Falha ao identificar a conta Google (${response.status}): ${errorBody}`);
+    falha.status = response.status;
+    throw falha;
   }
   const data = await response.json();
   return data.email;

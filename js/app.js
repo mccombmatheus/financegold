@@ -42,6 +42,8 @@ function setActiveCompanyLabel(name) {
 }
 
 function hideAllScreens() {
+  // any real screen replaces the loading screen shown while a reload resumes the session
+  document.documentElement.classList.remove("retomando");
   loginScreen.hidden = true;
   companyPickerScreen.hidden = true;
   cadastroScreen.hidden = true;
@@ -49,6 +51,29 @@ function hideAllScreens() {
   solicitarAcessoScreen.hidden = true;
   sistemaScreen.hidden = true;
   appShell.hidden = true;
+}
+
+// Text on the loading screen (shown while a reload resumes the session).
+function definirStatusDeInicio(texto) {
+  const el = document.getElementById("boot-status");
+  if (el) el.textContent = texto;
+}
+
+// A momentary hiccup of Google or of the app's server (they happen) must not
+// throw the person back to the login screen: read-only checks made while
+// signing in are tried again a couple of times before giving up. Offline,
+// expired sessions and refusals (401/403) are never retried.
+async function tentarVariasVezes(fn) {
+  const esperas = [1200, 2500];
+  for (let i = 0; ; i += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isNetworkError(err) || err.sessionExpired || err.status === 401 || err.status === 403 || i >= esperas.length) throw err;
+      definirStatusDeInicio("Tentando de novo…");
+      await new Promise((resolve) => setTimeout(resolve, esperas[i]));
+    }
+  }
 }
 
 function showApp() {
@@ -161,8 +186,10 @@ async function resolveProfileAndEnter(tenant, token, email) {
   rememberCompany(tenant.spreadsheetId);
 
   try {
-    await ensureUsuariosSheet(token);
-    const usuario = await fetchUsuario(email, token);
+    const usuario = await tentarVariasVezes(async () => {
+      await ensureUsuariosSheet(token);
+      return fetchUsuario(email, token);
+    });
     if (usuario) {
       startApp(token, usuario.nome, usuario.perfil, usuario.linha);
       return;
@@ -176,8 +203,15 @@ async function resolveProfileAndEnter(tenant, token, email) {
     }
   } catch (err) {
     console.error(err);
+    if (err.sessionExpired) return;
     // Fail closed: an error checking access must never silently let someone in.
-    showAcessoNegadoScreen(email, tenant.empresa, `erro ao verificar acesso: ${err.message}`);
+    if (err.status === 403) {
+      showAcessoNegadoScreen(email, tenant.empresa, `erro ao verificar acesso: ${err.message}`);
+    } else {
+      // A server that is just not answering is not "access denied": keep the session so a reload resumes.
+      showLogin();
+      loginStatus.textContent = `Não foi possível conectar ao servidor agora. Atualize a página para tentar de novo. (${err.message})`;
+    }
   }
 }
 
@@ -359,6 +393,7 @@ function loadLastSession() {
 async function enterOfflineFromLastSession(token) {
   const last = loadLastSession();
   if (!last) {
+    showLogin();
     loginStatus.textContent =
       "Sem internet, e nenhuma sessão anterior salva neste navegador. Conecte-se para entrar pela primeira vez.";
     return;
@@ -388,11 +423,13 @@ async function startApp(token, nome, perfil, linha) {
     perfil,
     linha,
   });
-  showApp();
+  // Set up and pick the right screen while the shell is still hidden, so the
+  // dashboard never flashes before jumping to the screen the person was on.
   setupNavigation();
   applyRoleVisibility(perfil);
   setupAjustesHandlers();
   restoreLastViewOnce();
+  showApp();
 
   document.getElementById("ajustes-conta-nome").textContent = nome;
   document.getElementById("ajustes-conta-email").textContent = currentEmail || "";
@@ -551,17 +588,19 @@ async function handleSignedIn(token) {
 
   let grantedScopes;
   try {
-    grantedScopes = await getTokenScopes(token);
+    grantedScopes = await tentarVariasVezes(() => getTokenScopes(token));
   } catch (err) {
     if (isNetworkError(err)) return enterOfflineFromLastSession(token);
     console.error(err);
-    clearTokenSession();
-    loginStatus.textContent = "Não foi possível verificar sua conta Google. Tente novamente.";
+    // Google not answering is not a bad token: keep the session, a reload tries again.
+    showLogin();
+    loginStatus.textContent = "Não foi possível verificar sua conta Google agora. Atualize a página para tentar de novo.";
     return;
   }
 
   if (!grantedScopes || !hasAllScopes(grantedScopes, CONFIG.SCOPES)) {
     clearTokenSession();
+    showLogin();
     loginStatus.textContent =
       "Sua conta não concedeu todas as permissões necessárias (acesso ao Google Sheets). Clique em \"Entrar com Google\" novamente e aceite todas as permissões pedidas.";
     return;
@@ -569,24 +608,26 @@ async function handleSignedIn(token) {
 
   let email;
   try {
-    email = await fetchUserEmail(token);
+    email = await tentarVariasVezes(() => fetchUserEmail(token));
   } catch (err) {
     if (isNetworkError(err)) return enterOfflineFromLastSession(token);
     console.error(err);
-    clearTokenSession();
-    loginStatus.textContent = "Não foi possível verificar sua conta Google. Tente novamente.";
+    if (err.status === 401 || err.status === 403) clearTokenSession(); // the token itself was refused
+    showLogin();
+    loginStatus.textContent = "Não foi possível verificar sua conta Google. Atualize a página ou entre de novo.";
     return;
   }
 
   let companies;
   try {
-    companies = await resolveCompaniesForEmail(email, token);
+    companies = await tentarVariasVezes(() => resolveCompaniesForEmail(email, token));
   } catch (err) {
     if (isNetworkError(err)) return enterOfflineFromLastSession(token);
     if (err.sessionExpired) return; // handleSessionExpired already showed the login screen
     console.error(err);
-    clearTokenSession();
-    loginStatus.textContent = `Não foi possível verificar seu acesso: ${err.message}`;
+    // The session is still good: do not sign the person out because the server hiccuped.
+    showLogin();
+    loginStatus.textContent = `Não foi possível conectar ao servidor agora. Atualize a página para tentar de novo. (${err.message})`;
     return;
   }
   // The system administrator (developer) lands in the Painel do sistema, never
@@ -610,6 +651,7 @@ async function handleSignedIn(token) {
       return;
     }
     clearTokenSession();
+    showLogin();
     loginStatus.textContent = `O e-mail ${email} ainda não tem acesso a nenhuma empresa. Peça a quem administra para cadastrar este e-mail em Ajustes.`;
     return;
   }
