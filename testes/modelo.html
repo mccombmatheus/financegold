@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Testes do modelo de planilha</title></head>
+<body>
+<h3 style="font-family:sans-serif">Testes do modelo de planilha (js/modelo.js)</h3>
+<pre id="out">rodando…</pre>
+<div id="arquivos" hidden></div>
+<script>window.addEventListener("error",function(e){document.getElementById("out").textContent="ERRO: "+e.message+" ("+String(e.filename).split("/").pop()+":"+e.lineno+")";});</script>
+<script src="../js/esquema.js"></script>
+<script src="../js/segmentos.js"></script>
+<script src="../js/modelo.js"></script>
+<script>
+const results = [];
+const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const SEGS = Object.keys(SEGMENTOS);
+const serial = (a, m, d) => Math.round((Date.UTC(a, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000);
+
+// ---- read our own zip back: end-of-central-directory -> entries -> CRC check
+function lerZip(bytes) {
+  const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let fim = -1;
+  for (let i = bytes.length - 22; i >= 0; i -= 1) if (v.getUint32(i, true) === 0x06054b50) { fim = i; break; }
+  if (fim < 0) return null;
+  const total = v.getUint16(fim + 10, true);
+  let pos = v.getUint32(fim + 16, true);
+  const arquivos = {};
+  for (let k = 0; k < total; k += 1) {
+    if (v.getUint32(pos, true) !== 0x02014b50) return null;
+    const crc = v.getUint32(pos + 16, true);
+    const tam = v.getUint32(pos + 24, true);
+    const nomeLen = v.getUint16(pos + 28, true);
+    const extraLen = v.getUint16(pos + 30, true);
+    const comLen = v.getUint16(pos + 32, true);
+    const desloc = v.getUint32(pos + 42, true);
+    const nome = new TextDecoder().decode(bytes.slice(pos + 46, pos + 46 + nomeLen));
+    const lhNome = v.getUint16(desloc + 26, true), lhExtra = v.getUint16(desloc + 28, true);
+    const ini = desloc + 30 + lhNome + lhExtra;
+    const dados = bytes.slice(ini, ini + tam);
+    arquivos[nome] = { dados, crcOk: crc32(dados) === crc, texto: new TextDecoder().decode(dados) };
+    pos += 46 + nomeLen + extraLen + comLen;
+  }
+  return arquivos;
+}
+const xml = (t) => new DOMParser().parseFromString(t, "application/xml");
+const bemFormado = (t) => xml(t).getElementsByTagName("parsererror").length === 0;
+
+T(crc32(new TextEncoder().encode("123456789")) === 0xcbf43926, "crc32 matches the standard test vector");
+
+SEGS.forEach((id) => {
+  const bytes = gerarModeloXlsx(id);
+  const zip = lerZip(bytes);
+  T(zip !== null && bytes[0] === 0x50 && bytes[1] === 0x4b, id + ": a valid zip container is produced");
+  if (!zip) return;
+  const nomes = Object.keys(zip);
+  T(nomes.every((n) => zip[n].crcOk), id + ": every file's CRC matches");
+  T(["[Content_Types].xml", "_rels/.rels", "xl/workbook.xml", "xl/_rels/workbook.xml.rels", "xl/styles.xml"].every((n) => nomes.indexOf(n) !== -1), id + ": the required package parts exist");
+  T(nomes.every((n) => bemFormado(zip[n].texto)), id + ": every XML part is well-formed");
+  const wb = xml(zip["xl/workbook.xml"].texto);
+  const abas = Array.from(wb.getElementsByTagName("sheet")).map((s) => s.getAttribute("name"));
+  T(same(abas, ["Instruções", "Lançamento", "Estoque", "Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas", "Exemplo"]), id + ": the tabs are the ones the app uses, plus instructions and example");
+  T(abas.every((a) => a.length <= 31 && !/[\\/?*\[\]:]/.test(a)), id + ": tab names are valid for Excel (<=31 chars, no forbidden characters)");
+  T(nomes.filter((n) => n.indexOf("xl/worksheets/") === 0).length === abas.length, id + ": one worksheet part per tab");
+  const ct = zip["[Content_Types].xml"].texto;
+  T(abas.every((a, i) => ct.indexOf("/xl/worksheets/sheet" + (i + 1) + ".xml") !== -1), id + ": every worksheet is declared in [Content_Types].xml");
+
+  // headers = what the app's engine expects for THIS segment
+  const cab = cabecalhosDoModelo(id);
+  const celulas = (n) => Array.from(xml(zip["xl/worksheets/sheet" + n + ".xml"].texto).getElementsByTagName("c"));
+  const cabDaAba = (n) => celulas(n).filter((c) => /^[A-Z]+1$/.test(c.getAttribute("r"))).map((c) => c.textContent);
+  T(same(cabDaAba(2), cab.lancamento) && same(cabDaAba(3), cab.estoque), id + ": Lançamento and Estoque headers are written to row 1");
+  const joia = id === "joalheria";
+  T(cab.lancamento[7] === (joia ? "Peso (g)" : "Quantidade") && cab.estoque[5] === (joia ? "Peso em grama" : "Quantidade") && cab.estoque[6] === (joia ? "Pureza (k)" : "Especificação"), id + ": the segment's own words (gold words only for Joalheria)");
+  if (!joia) {
+    const tudo = nomes.map((n) => zip[n].texto).join(" ");
+    T(!/ouro|pureza|peso|prata|relógio|joia|quilate|grama/i.test(tudo.replace(/Pessoa|pesso/gi, "")), id + ": no jewelry word anywhere in a non-jewelry template (instructions included)");
+  }
+  // the engine recognises the template's headers in their standard positions
+  const el = detectarEsquema([cab.lancamento], "lancamentos");
+  const ee = detectarEsquema([cab.estoque], "estoque");
+  T(el.linhaCabecalho === 1 && same(el.cols, POSICOES_PADRAO.lancamentos) && ee.linhaCabecalho === 1 && same(ee.cols, POSICOES_PADRAO.estoque), id + ": the app reads the template's headers in the standard positions");
+  // fill-in helpers
+  const s2 = zip["xl/worksheets/sheet2.xml"].texto, s3 = zip["xl/worksheets/sheet3.xml"].texto;
+  T(s2.indexOf('sqref="G2:G1000"') !== -1 && s2.indexOf("Entrada,Saída") !== -1, id + ": Tipo has a dropdown (Entrada, Saída)");
+  T(s3.indexOf('sqref="O2:O1000"') !== -1 && s3.indexOf("Sim,Não") !== -1, id + ": Vendido? has a dropdown (Sim, Não)");
+  T(s2.indexOf('state="frozen"') !== -1 && s3.indexOf('state="frozen"') !== -1, id + ": the header row stays visible while scrolling");
+  T(/<col min="1" max="1"[^>]*style="2"/.test(s2) && /<col min="6" max="6"[^>]*style="3"/.test(s2), id + ": date and money columns are pre-formatted");
+  const formulas = (n) => Array.from(xml(zip["xl/worksheets/sheet" + n + ".xml"].texto).getElementsByTagName("f")).map((f) => f.textContent);
+  const fLojas = formulas(4), fCat = formulas(7);
+  T(fLojas[0] === 'IF(B2="","",ROW()-1)' && fLojas[1] === 'IF(B2="","",A2&" - "&B2)' && fLojas.length === 200, id + ": list codes and 'código - nome' fill themselves (100 rows)");
+  T(fCat[2] === 'IF(B2="","","Ativo")' && fCat.length === 300 && cabDaAba(7).indexOf("Status") !== -1, id + ": categories are active by default");
+  T(zip["xl/workbook.xml"].texto.indexOf('fullCalcOnLoad="1"') !== -1, id + ": formulas are calculated when the file opens");
+  // the example rows are read correctly by the same engine that reads real sheets
+  const ex = celulas(12);
+  const doEx = (ref) => { const c = ex.filter((x) => x.getAttribute("r") === ref)[0]; return c ? c.textContent : null; };
+  T(doEx("A1").indexOf("EXEMPLO") === 0 && doEx("F3") !== null, id + ": the Exemplo tab has filled rows");
+  const rows = [cab.lancamento, [serial(2026, 9, 1), "Loja Centro", "Caixa", "Minha Empresa", "Vendas", 1500, "Entrada", 3, "Maria", "x"], [serial(2026, 9, 2), "Loja Centro", "Banco", "Minha Empresa", "Aluguel", 2800, "Saída", "", "Imobiliária", "y"]];
+  const lido = interpretarLancamentos(rows, detectarEsquema(rows, "lancamentos")).registros;
+  T(lido.length === 2 && lido[0].tipo === "Entrada" && lido[1].tipo === "Saída" && lido[1].valor === -2800, id + ": positive values + Tipo are read as money in / out (the rule the instructions teach)");
+  // determinism and size
+  T(same(Array.from(gerarModeloXlsx(id)), Array.from(bytes)), id + ": the file is deterministic");
+  T(bytes.length > 8000 && bytes.length < 400000, id + ": a sensible size (" + bytes.length + " bytes)");
+});
+T(nomeDoArquivoModelo("petshop") === "modelo-planilha-petshop.xlsx" && nomeDoArquivoModelo("<script>") === "modelo-planilha-" + SEGMENTO_PADRAO + ".xlsx" && nomeDoArquivoModelo("../../x") === "modelo-planilha-" + SEGMENTO_PADRAO + ".xlsx", "the file name is built only from a whitelisted segment id");
+T(escaparXml('<a href="x">&\'</a>') === "&lt;a href=&quot;x&quot;&gt;&amp;'&lt;/a&gt;", "text is XML-escaped");
+
+// hand over two files for an independent check with openpyxl (outside the browser)
+function paraBase64(bytes) { let s = ""; bytes.forEach((b) => { s += String.fromCharCode(b); }); return btoa(s); }
+["joalheria", "petshop"].forEach((id) => {
+  const el = document.createElement("pre");
+  el.id = "xlsx-" + id;
+  el.textContent = paraBase64(gerarModeloXlsx(id));
+  document.getElementById("arquivos").appendChild(el);
+});
+const falhas = results.filter((r) => r.indexOf("FAIL") === 0);
+document.getElementById("out").textContent = results.join("\n") + "\n\nTOTAL " + results.length + "  FAILED " + falhas.length;
+</script></body></html>

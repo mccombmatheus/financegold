@@ -209,10 +209,46 @@ function renderLeituraAtual() {
   });
 }
 
+// Two panels in the card: connecting a sheet, and downloading the template.
+function mostrarPainelConectar(qual) {
+  ["conectar", "modelo"].forEach((nome) => {
+    document.getElementById(`conectar-painel-${nome}`).hidden = nome !== qual;
+    const aba = document.getElementById(`aba-${nome}`);
+    aba.classList.toggle("active", nome === qual);
+    aba.setAttribute("aria-selected", nome === qual ? "true" : "false");
+  });
+}
+
+function prepararModelo() {
+  const select = document.getElementById("modelo-segmento");
+  select.innerHTML = "";
+  Object.keys(SEGMENTOS).forEach((id) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = SEGMENTOS[id].nome;
+    select.appendChild(option);
+  });
+  select.value = segmentoValido(segmentoAtual);
+}
+
 function initConectar() {
   renderLeituraAtual();
+  prepararModelo();
   if (conectarReady) return;
   conectarReady = true;
+  document.querySelectorAll(".conectar-aba").forEach((botao) => {
+    botao.addEventListener("click", () => mostrarPainelConectar(botao.dataset.painel));
+  });
+  document.getElementById("btn-baixar-modelo").addEventListener("click", () => {
+    const status = document.getElementById("modelo-status");
+    try {
+      baixarModelo(document.getElementById("modelo-segmento").value);
+      status.textContent = "Modelo baixado. Procure o arquivo na pasta Downloads.";
+    } catch (err) {
+      console.error(err);
+      status.textContent = "Não foi possível gerar o modelo neste navegador.";
+    }
+  });
   document.getElementById("btn-conectar-analisar").addEventListener("click", async () => {
     const btn = document.getElementById("btn-conectar-analisar");
     btn.disabled = true;

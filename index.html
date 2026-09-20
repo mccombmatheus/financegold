@@ -597,21 +597,46 @@
 
           <section class="card" id="ajustes-conectar-section">
             <h2>Conectar planilha</h2>
-            <p class="field-hint">O app reconhece sozinho as colunas da sua planilha, mesmo fora de ordem ou com nomes diferentes. Se as abas têm outros nomes (por exemplo "Movimentações" em vez de "Lançamento"), analise a planilha aqui e confirme qual aba é o fluxo de caixa, o estoque e as listas.</p>
-            <div id="conectar-leitura" class="conectar-leitura"></div>
-            <div class="form-actions">
-              <button type="button" id="btn-conectar-analisar">Analisar planilha</button>
-              <span id="conectar-status" class="status-message"></span>
+            <div class="conectar-abas" role="tablist" aria-label="Conectar planilha">
+              <button type="button" class="conectar-aba active" role="tab" aria-selected="true" data-painel="conectar" id="aba-conectar">Conectar</button>
+              <button type="button" class="conectar-aba" role="tab" aria-selected="false" data-painel="modelo" id="aba-modelo">Baixar modelo</button>
             </div>
-            <div id="conectar-resultado" hidden>
-              <div class="table-wrapper">
-                <table id="conectar-table">
-                  <thead><tr><th>Aba</th><th>O que é</th><th>Colunas reconhecidas</th></tr></thead>
-                  <tbody></tbody>
-                </table>
-              </div>
+
+            <div id="conectar-painel-conectar" role="tabpanel" aria-labelledby="aba-conectar">
+              <p class="field-hint">O app reconhece sozinho as colunas da sua planilha, mesmo fora de ordem ou com nomes diferentes. Se as abas têm outros nomes (por exemplo "Movimentações" em vez de "Lançamento"), analise a planilha aqui e confirme qual aba é o fluxo de caixa, o estoque e as listas.</p>
+              <div id="conectar-leitura" class="conectar-leitura"></div>
               <div class="form-actions">
-                <button type="button" id="btn-conectar-salvar">Salvar conexão</button>
+                <button type="button" id="btn-conectar-analisar">Analisar planilha</button>
+                <span id="conectar-status" class="status-message"></span>
+              </div>
+              <div id="conectar-resultado" hidden>
+                <div class="table-wrapper">
+                  <table id="conectar-table">
+                    <thead><tr><th>Aba</th><th>O que é</th><th>Colunas reconhecidas</th></tr></thead>
+                    <tbody></tbody>
+                  </table>
+                </div>
+                <div class="form-actions">
+                  <button type="button" id="btn-conectar-salvar">Salvar conexão</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="conectar-painel-modelo" role="tabpanel" aria-labelledby="aba-modelo" hidden>
+              <p class="field-hint">Não tem uma planilha ou não sabe por onde começar? Baixe o modelo: um arquivo pronto (abre no Excel, no Google Planilhas e no Numbers) com as abas e colunas que o Finan. usa, listas suspensas para facilitar o preenchimento, uma aba de instruções passo a passo e uma aba com exemplos.</p>
+              <div class="form-field modelo-escolha">
+                <label for="modelo-segmento">Modelo para o segmento</label>
+                <select id="modelo-segmento"></select>
+              </div>
+              <ul class="modelo-lista">
+                <li><strong>Instruções</strong> — como preencher, em linguagem simples.</li>
+                <li><strong>Lançamento</strong> e <strong>Estoque</strong> — as duas abas principais, já formatadas.</li>
+                <li><strong>Lojas, Contas, Categoria, Pessoa...</strong> — digite só o nome; o código aparece sozinho.</li>
+                <li><strong>Exemplo</strong> — linhas preenchidas para você se inspirar.</li>
+              </ul>
+              <div class="form-actions">
+                <button type="button" id="btn-baixar-modelo">Baixar modelo (.xlsx)</button>
+                <span id="modelo-status" class="status-message"></span>
               </div>
             </div>
           </section>
@@ -661,6 +686,7 @@
 <script src="js/usuarios.js"></script>
 <script src="js/usuarios-admin.js"></script>
 <script src="js/listas-admin.js"></script>
+<script src="js/modelo.js"></script>
 <script src="js/conectar.js"></script>
 <script src="js/sistema.js"></script>
 <script src="js/solicitar-acesso.js"></script>
