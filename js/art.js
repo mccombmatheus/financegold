@@ -113,7 +113,7 @@ function buildHeroArt() {
   // the halftone sphere stays; the drawing on it is the segment's own mark
   const desenho = id === "outro"
     ? colored("art-wire", buildWireframe([[0, 0, 0, 1], [1, 0, 0, 1], [0, 0, 1, 1]], 46, 205, 150, 1.1, 0.7))
-    : colored("art-wire", grupoMarcaSegmento(id, 215, 122, 118, 112, 1.2));
+    : colored("art-wire", grupoMarcaSegmento(id, 215, 122, id === "petshop" ? 170 : 118, 112, 1.2));
   return wrapArt(330, 260, "art-svg", [colored("art-halftone", buildHalftone(215, 120, 108, 9, 4.1)), desenho]);
 }
 
@@ -143,7 +143,7 @@ function buildLogoMark(size) {
 // cube logo: things that SEEM something and could be, but are not literal (an
 // ingot stack that could be boxes, two cubes with ears that could be a cat and a
 // dog, a hex nut that could be a gear...). Isometric geometry only: no images.
-// Joalheria: stacked ingots | Petshop: two cubes with ears | Comércio: a cube
+// Joalheria: a stamped bar | Petshop: a cat and a dog (explicit request) | Comércio: a cube
 // with a handle | Serviços: a hex nut | Alimentação: a lidded cylinder |
 // Saúde: an extruded plus | Outro: the two cubes.
 // ---------------------------------------------------------------------------
@@ -201,27 +201,20 @@ function desenhoIngotes() {
   return l;
 }
 
-function desenhoCuboComOrelhas() {
-  // two cubes like the logo; the first with pointed ears (a cat?), the second with drooping ones (a dog?)
+// The one segment mark that IS a picture, on the user's explicit request: a cat and a dog, low-poly facets.
+function desenhoGatoECachorro() {
   const l = [];
-  caixaIso(0, 0, 0, 1, 1, 1).forEach((x) => l.push(x));
-  caixaIso(1, 0, 0, 1, 1, 1).forEach((x) => l.push(x));
-  // pointed ears on the first cube's top face (near its left and right corners)
-  const orelhaPontuda = (cx, cy) => {
-    const t = 0.34;
-    const base = [[cx - t / 2, cy - t / 2, 1], [cx + t / 2, cy - t / 2, 1], [cx + t / 2, cy + t / 2, 1], [cx - t / 2, cy + t / 2, 1]];
-    const topo = [cx, cy, 1.5];
-    l.push(linhaIso(base, true));
-    base.forEach((p) => l.push(linhaIso([p, topo], false)));
-  };
-  orelhaPontuda(0.22, 0.78);
-  orelhaPontuda(0.78, 0.22);
-  // drooping ears on the second cube: flaps folded down from its top corners
-  const orelhaCaida = (cx, cy, sx, sy) => {
-    l.push(linhaIso([[cx, cy, 1], [cx + sx * 0.5, cy + sy * 0.5, 0.84], [cx + sx * 0.16, cy + sy * 0.16, 0.36]], true));
-  };
-  orelhaCaida(1.06, 0.94, -1, 1);
-  orelhaCaida(1.94, 0.06, 1, -1);
+  const ponto = (dx, dy, k) => (x, y) => [dx + x * k, dy + y * k];
+  const arestas = (v, lista) => lista.forEach(([x, y]) => l.push([v[x], v[y]]));
+  const G = ponto(0, 4, 0.98);
+  const gato = { a: G(12, 8), b: G(32, 26), c: G(68, 26), d: G(88, 8), e: G(92, 44), f: G(70, 70), g: G(30, 70), h: G(8, 44), fr: G(50, 30), o1: G(32, 46), o2: G(68, 46), n: G(50, 56), q: G(50, 74) };
+  const contornoGato = ["a", "b", "c", "d", "e", "f", "g", "h", "a"].map((k) => gato[k]);
+  l.push(contornoGato);
+  arestas(gato, [["h", "b"], ["e", "c"], ["b", "fr"], ["c", "fr"], ["fr", "o1"], ["fr", "o2"], ["fr", "n"], ["b", "o1"], ["c", "o2"], ["h", "o1"], ["e", "o2"], ["o1", "n"], ["o2", "n"], ["g", "n"], ["f", "n"], ["g", "q"], ["f", "q"], ["n", "q"]]);
+  const C = ponto(104, 4, 0.98);
+  const cao = { d1: C(34, 8), d2: C(66, 8), l1: C(12, 16), l2: C(6, 54), l3: C(22, 58), l4: C(30, 34), r1: C(88, 16), r2: C(94, 54), r3: C(78, 58), r4: C(70, 34), j1: C(34, 68), j2: C(50, 78), j3: C(66, 68), fr: C(50, 22), e1: C(40, 38), e2: C(60, 38), n: C(50, 58) };
+  l.push(["d1", "d2", "r1", "r2", "r3", "r4", "j3", "j2", "j1", "l4", "l3", "l2", "l1", "d1"].map((k) => cao[k]));
+  arestas(cao, [["d1", "fr"], ["d2", "fr"], ["fr", "e1"], ["fr", "e2"], ["d1", "e1"], ["d2", "e2"], ["l4", "e1"], ["r4", "e2"], ["e1", "n"], ["e2", "n"], ["n", "j1"], ["n", "j2"], ["n", "j3"], ["l1", "l4"], ["l1", "l3"], ["r1", "r4"], ["r1", "r3"], ["l4", "j1"], ["r4", "j3"]]);
   return l;
 }
 
@@ -290,7 +283,7 @@ function desenhoCubosLogo() {
 
 const MARCAS_SEGMENTO = {
   joalheria: { desenho: desenhoIngotes },
-  petshop: { desenho: desenhoCuboComOrelhas },
+  petshop: { desenho: desenhoGatoECachorro },
   comercio: { desenho: desenhoCuboComAlca },
   servicos: { desenho: desenhoPorca },
   alimentacao: { desenho: desenhoCilindro },
@@ -319,7 +312,7 @@ function marcaDoSegmento(id) {
 function buildSegmentMark(id, size) {
   const marca = marcaDoSegmento(id);
   const altura = Math.round(size * 1.3);
-  const largura = Math.round(altura * (marca.w / marca.h) * 0.85);
+  const largura = Math.round(altura * (marca.w / marca.h) * (marca.w / marca.h > 1.6 ? 0.9 : 0.85));
   const pad = 2;
   const escala = Math.min((largura - 2 * pad) / marca.w, (altura - 2 * pad) / marca.h);
   const ox = (largura - marca.w * escala) / 2 - marca.minX * escala;
