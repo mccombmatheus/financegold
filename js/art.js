@@ -143,7 +143,7 @@ function buildLogoMark(size) {
 // cube logo: things that SEEM something and could be, but are not literal (an
 // ingot stack that could be boxes, two cubes with ears that could be a cat and a
 // dog, a hex nut that could be a gear...). Isometric geometry only: no images.
-// Joalheria: a stamped bar | Petshop: a cat and a dog (explicit request) | Comércio: a cube
+// Joalheria: a squat box seen from the side | Petshop: a cat and a dog (explicit request) | Comércio: a cube
 // with a handle | Serviços: a hex nut | Alimentação: a lidded cylinder |
 // Saúde: an extruded plus | Outro: the two cubes.
 // ---------------------------------------------------------------------------
@@ -190,15 +190,13 @@ function pontosElipse(cx, cy, z, raio, passos) {
   return pts;
 }
 
-function desenhoIngotes() {
-  // a bar with a stamp on top: could be a gold bar, a box, a pedestal — it is none of them
-  const retangulo = (x0, y0, x1, y1, z) => [[x0, y0, z], [x1, y0, z], [x1, y1, z], [x0, y1, z]];
-  const base = retangulo(0, 0, 2, 1.1, 0);
-  const topo = retangulo(0.28, 0.2, 1.72, 0.9, 0.62);
-  const l = [linhaIso(base, true), linhaIso(topo, true)];
-  for (let i = 0; i < 4; i += 1) l.push(linhaIso([base[i], topo[i]], false));
-  l.push(linhaIso(retangulo(0.62, 0.36, 1.38, 0.74, 0.62), true));
-  return l;
+function desenhoCaixaLateral() {
+  // a squat box seen from the side, almost nothing on it but a lid line: a jewelry box, a cube, a block
+  const frente = [[0, 20], [60, 20], [60, 80], [0, 80], [0, 20]];
+  const topo = [[0, 20], [22, 6], [82, 6], [60, 20]];
+  const lateral = [[60, 20], [82, 6], [82, 66], [60, 80]];
+  const tampa = [[0, 38], [60, 38], [82, 24]];
+  return [frente, topo, lateral, tampa];
 }
 
 // The one segment mark that IS a picture, on the user's explicit request: a cat and a dog, low-poly facets.
@@ -282,7 +280,7 @@ function desenhoCubosLogo() {
 }
 
 const MARCAS_SEGMENTO = {
-  joalheria: { desenho: desenhoIngotes },
+  joalheria: { desenho: desenhoCaixaLateral },
   petshop: { desenho: desenhoGatoECachorro },
   comercio: { desenho: desenhoCuboComAlca },
   servicos: { desenho: desenhoPorca },
