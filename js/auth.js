@@ -7,6 +7,9 @@ const SESSION_EXPIRES_KEY = "ipanema_gis_token_expires_at";
 // a brand-new token is not asked about again over the network.
 const SESSION_SCOPES_KEY = "ipanema_gis_token_scopes";
 const SESSION_ISSUED_KEY = "ipanema_gis_token_issued_at";
+// A session of the e-mail + password login (not Google): which kind, and who.
+const SESSION_KIND_KEY = "ipanema_auth_kind";
+const SESSION_EMAIL_KEY = "ipanema_auth_email";
 
 function waitForGoogleIdentity(timeoutMs = 10000) {
   return new Promise((resolve, reject) => {
@@ -30,6 +33,8 @@ function saveTokenToSession(token, expiresInSeconds, scopes) {
     sessionStorage.setItem(SESSION_TOKEN_KEY, token);
     sessionStorage.setItem(SESSION_EXPIRES_KEY, String(Date.now() + expiresInSeconds * 1000));
     sessionStorage.setItem(SESSION_ISSUED_KEY, String(Date.now()));
+    sessionStorage.removeItem(SESSION_KIND_KEY);
+    sessionStorage.removeItem(SESSION_EMAIL_KEY);
     if (typeof scopes === "string" && scopes) sessionStorage.setItem(SESSION_SCOPES_KEY, scopes);
     else sessionStorage.removeItem(SESSION_SCOPES_KEY);
   } catch (err) {
@@ -51,6 +56,38 @@ function loadValidTokenFromSession() {
     console.warn("Não foi possível ler a sessão:", err);
   }
   return null;
+}
+
+// Keeps a session of the password login for this tab (same keys the reload
+// logic already reads, plus the kind and the e-mail: there is no Google to ask).
+function saveSenhaSession(token, expiraEmMs, email) {
+  try {
+    sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+    sessionStorage.setItem(SESSION_EXPIRES_KEY, String(expiraEmMs));
+    sessionStorage.setItem(SESSION_ISSUED_KEY, String(Date.now()));
+    sessionStorage.removeItem(SESSION_SCOPES_KEY);
+    sessionStorage.setItem(SESSION_KIND_KEY, "senha");
+    sessionStorage.setItem(SESSION_EMAIL_KEY, email);
+  } catch (err) {
+    console.warn("Não foi possível salvar a sessão:", err);
+  }
+  accessToken = token;
+}
+
+function tipoDeSessao() {
+  try {
+    return sessionStorage.getItem(SESSION_KIND_KEY) === "senha" ? "senha" : "google";
+  } catch (err) {
+    return "google";
+  }
+}
+
+function emailDaSessao() {
+  try {
+    return sessionStorage.getItem(SESSION_EMAIL_KEY) || "";
+  } catch (err) {
+    return "";
+  }
 }
 
 // The scopes Google reported when it issued this tab's token (null when unknown).
@@ -79,6 +116,8 @@ function clearTokenSession() {
     sessionStorage.removeItem(SESSION_EXPIRES_KEY);
     sessionStorage.removeItem(SESSION_SCOPES_KEY);
     sessionStorage.removeItem(SESSION_ISSUED_KEY);
+    sessionStorage.removeItem(SESSION_KIND_KEY);
+    sessionStorage.removeItem(SESSION_EMAIL_KEY);
   } catch (err) {
     // ignore
   }
@@ -154,8 +193,9 @@ async function fetchUserEmail(token) {
 
 function signOut() {
   const token = accessToken;
+  const eraGoogle = tipoDeSessao() === "google";
   clearTokenSession();
-  if (token && window.google && google.accounts && google.accounts.oauth2) {
+  if (eraGoogle && token && window.google && google.accounts && google.accounts.oauth2) {
     google.accounts.oauth2.revoke(token, () => {});
   }
 }

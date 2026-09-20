@@ -50,6 +50,8 @@ function hideAllScreens() {
   acessoNegadoScreen.hidden = true;
   solicitarAcessoScreen.hidden = true;
   sistemaScreen.hidden = true;
+  document.getElementById("senha-cadastro-screen").hidden = true;
+  document.getElementById("senha-esqueci-screen").hidden = true;
   appShell.hidden = true;
 }
 
@@ -473,6 +475,7 @@ async function startApp(token, nome, perfil, linha) {
   document.getElementById("ajustes-conta-email").textContent = currentEmail || "";
   document.getElementById("ajustes-conta-empresa").textContent = sidebarEmpresa.textContent;
   document.getElementById("ajustes-trocar-empresa-card").hidden = currentCompanies.length <= 1;
+  prepararCartaoDeSenha();
   document.getElementById("ajustes-usuarios-section").hidden = !isMaster(perfil);
   // Creating companies and editing the lists need the gateway (direct mode has
   // no registry); the company's Master edits lists, only system admins create companies.
@@ -624,6 +627,10 @@ async function handleSignedIn(token) {
   sessionExpiredHandled = false;
   loginStatus.textContent = "Verificando conta...";
 
+  // A session of the e-mail + password login: the server already knows who it is
+  // (there is no Google token to check).
+  if (tipoDeSessao() === "senha") return seguirComConta(token, emailDaSessao());
+
   let grantedScopes;
   try {
     grantedScopes = await escoposDoToken(token);
@@ -656,6 +663,12 @@ async function handleSignedIn(token) {
     return;
   }
 
+  return seguirComConta(token, email);
+}
+
+// From here on it does not matter HOW the person proved who they are (Google or
+// e-mail + password): find their companies and route them.
+async function seguirComConta(token, email) {
   let companies;
   try {
     companies = await tentarVariasVezes(() => resolveCompaniesForEmail(email, token));
@@ -709,6 +722,13 @@ async function handleSignedIn(token) {
   } else {
     showCompanyPicker(companies, token, email);
   }
+}
+
+// A successful e-mail + password login: keep the session for this tab and continue
+// exactly as after a Google login (js/login-senha.js calls this).
+function entrarComSenha(resposta) {
+  saveSenhaSession(resposta.token, resposta.expiraEm, resposta.email);
+  handleSignedIn(resposta.token);
 }
 
 const authReady = initAuth(handleSignedIn, mostrarErroDeLogin).catch((err) => {

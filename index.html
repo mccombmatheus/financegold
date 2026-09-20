@@ -51,7 +51,124 @@
         Continuar com Google
       </button>
       <p id="login-status" class="status-message"></p>
+
+      <div id="login-senha-bloco" hidden>
+        <div class="auth-divisor"><span>ou entre com e-mail e senha</span></div>
+        <form id="login-senha-form" class="auth-form" novalidate>
+          <div class="auth-campo">
+            <label for="login-email">E-mail</label>
+            <input type="email" id="login-email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="120">
+          </div>
+          <div class="auth-campo">
+            <label for="login-senha">Senha</label>
+            <div class="campo-senha"><input type="password" id="login-senha" autocomplete="current-password" maxlength="128"></div>
+          </div>
+          <button type="submit" id="btn-entrar-senha" class="auth-btn">Entrar</button>
+          <p id="login-senha-status" class="status-message" role="alert" aria-live="polite"></p>
+          <div class="auth-links">
+            <button type="button" class="link-btn" id="btn-esqueci-senha">Esqueci minha senha</button>
+            <button type="button" class="link-btn" id="btn-criar-acesso">Criar acesso</button>
+          </div>
+        </form>
+      </div>
+
       <p class="auth-fineprint">Ao continuar, você concorda com o uso dos dados da sua empresa somente dentro do Finan.<br><a href="privacidade.html">Política de Privacidade</a> · <a href="termos.html">Termos de Serviço</a></p>
+    </div>
+  </div>
+</div>
+
+<div id="senha-cadastro-screen" class="login-screen" hidden>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">Finan.</span></div></div>
+  <div class="auth-panel">
+    <div class="auth-panel-inner">
+      <div id="cadastro-passo-dados">
+        <div class="auth-eyebrow">[ novo acesso ]</div>
+        <h1>Criar acesso</h1>
+        <p class="auth-lede">Crie um login com e-mail e senha. Vamos confirmar o seu e-mail e, em seguida, o administrador do sistema libera o acesso.</p>
+        <form id="cadastro-senha-form" class="auth-form" novalidate>
+          <div class="auth-campo"><label for="cs-nome">Seu nome</label><input type="text" id="cs-nome" autocomplete="name" maxlength="80"></div>
+          <div class="auth-campo"><label for="cs-email">E-mail</label><input type="email" id="cs-email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="120"></div>
+          <div class="auth-campo"><label for="cs-empresa">Empresa <span class="auth-opcional">(opcional)</span></label><input type="text" id="cs-empresa" autocomplete="organization" maxlength="80"></div>
+          <div class="auth-campo">
+            <label for="cs-senha">Senha</label>
+            <div class="campo-senha"><input type="password" id="cs-senha" autocomplete="new-password" maxlength="128"></div>
+            <div class="forca-senha" data-forca-de="cs-senha" data-email-de="cs-email"><div class="forca-barra"><span></span></div><p class="forca-texto"></p></div>
+          </div>
+          <div class="auth-campo">
+            <label for="cs-confirmar">Repita a senha</label>
+            <div class="campo-senha"><input type="password" id="cs-confirmar" autocomplete="new-password" maxlength="128"></div>
+          </div>
+          <p class="auth-dica">Sua senha é pessoal: não compartilhe com ninguém. Ela não é guardada em lugar nenhum, só uma verificação irreversível dela.</p>
+          <button type="submit" id="btn-cadastrar-senha" class="auth-btn">Continuar</button>
+          <p id="cadastro-senha-status" class="status-message" role="alert" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div id="cadastro-passo-codigo" hidden>
+        <div class="auth-eyebrow">[ confirmar e-mail ]</div>
+        <h1>Digite o código</h1>
+        <p class="auth-lede" id="cadastro-codigo-lede"></p>
+        <form id="cadastro-codigo-form" class="auth-form" novalidate>
+          <div class="auth-campo"><label for="cs-codigo">Código de 6 números</label><input type="text" id="cs-codigo" class="auth-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
+          <button type="submit" id="btn-confirmar-codigo" class="auth-btn">Confirmar</button>
+          <p id="cadastro-codigo-status" class="status-message" role="alert" aria-live="polite"></p>
+          <div class="auth-links"><button type="button" class="link-btn" id="btn-reenviar-codigo">Enviar outro código</button></div>
+        </form>
+      </div>
+
+      <div id="cadastro-passo-pronto" hidden>
+        <div class="auth-eyebrow">[ quase lá ]</div>
+        <h1>Cadastro recebido</h1>
+        <p class="auth-lede">Seu e-mail foi confirmado. Agora o administrador do sistema precisa liberar o seu acesso. Você receberá um e-mail assim que isso acontecer e poderá entrar com o seu e-mail e a senha que criou.</p>
+      </div>
+
+      <button type="button" class="btn-logout" id="btn-cadastro-voltar">Voltar para a entrada</button>
+    </div>
+  </div>
+</div>
+
+<div id="senha-esqueci-screen" class="login-screen" hidden>
+  <div class="auth-brand"><div class="auth-dotgrid"></div><div class="auth-brand-mark"><span class="auth-logo" data-art="logo-lg"></span><span class="auth-wordmark">Finan.</span></div></div>
+  <div class="auth-panel">
+    <div class="auth-panel-inner">
+      <div id="esqueci-passo-email">
+        <div class="auth-eyebrow">[ senha ]</div>
+        <h1>Esqueci a senha</h1>
+        <p class="auth-lede">Informe o e-mail do seu acesso. Se ele existir, enviamos um código para você criar uma nova senha.</p>
+        <form id="esqueci-email-form" class="auth-form" novalidate>
+          <div class="auth-campo"><label for="es-email">E-mail</label><input type="email" id="es-email" autocomplete="username" inputmode="email" autocapitalize="none" spellcheck="false" maxlength="120"></div>
+          <button type="submit" id="btn-esqueci-enviar" class="auth-btn">Enviar código</button>
+          <p id="esqueci-email-status" class="status-message" role="alert" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div id="esqueci-passo-nova" hidden>
+        <div class="auth-eyebrow">[ nova senha ]</div>
+        <h1>Crie uma nova senha</h1>
+        <p class="auth-lede" id="esqueci-nova-lede"></p>
+        <form id="esqueci-nova-form" class="auth-form" novalidate>
+          <div class="auth-campo"><label for="es-codigo">Código de 6 números</label><input type="text" id="es-codigo" class="auth-codigo" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*"></div>
+          <div class="auth-campo">
+            <label for="es-senha">Nova senha</label>
+            <div class="campo-senha"><input type="password" id="es-senha" autocomplete="new-password" maxlength="128"></div>
+            <div class="forca-senha" data-forca-de="es-senha" data-email-de="es-email"><div class="forca-barra"><span></span></div><p class="forca-texto"></p></div>
+          </div>
+          <div class="auth-campo">
+            <label for="es-confirmar">Repita a nova senha</label>
+            <div class="campo-senha"><input type="password" id="es-confirmar" autocomplete="new-password" maxlength="128"></div>
+          </div>
+          <button type="submit" id="btn-esqueci-salvar" class="auth-btn">Salvar nova senha</button>
+          <p id="esqueci-nova-status" class="status-message" role="alert" aria-live="polite"></p>
+        </form>
+      </div>
+
+      <div id="esqueci-passo-pronto" hidden>
+        <div class="auth-eyebrow">[ pronto ]</div>
+        <h1>Senha alterada</h1>
+        <p class="auth-lede">Sua nova senha já vale. Entre com o seu e-mail e a nova senha.</p>
+      </div>
+
+      <button type="button" class="btn-logout" id="btn-esqueci-voltar">Voltar para a entrada</button>
     </div>
   </div>
 </div>
@@ -140,6 +257,17 @@
       <p class="field-hint">Quem entrou com uma conta Google sem acesso pode pedir liberação. Este painel não mostra dados financeiros de nenhuma empresa.</p>
       <div id="pedidos-lista" class="pedidos-lista"></div>
       <p id="pedidos-status" class="status-message"></p>
+    </section>
+
+    <section class="card" id="sistema-logins-card">
+      <h2>Logins com senha <span id="sistema-logins-contador" class="sistema-contador"></span></h2>
+      <p class="field-hint">Pessoas que criaram um acesso com e-mail e senha. O e-mail delas já foi confirmado; aqui você decide se o acesso é liberado. O acesso aos dados de uma empresa continua dependendo de o administrador da empresa cadastrar o e-mail.</p>
+      <div id="logins-pendentes" class="pedidos-lista"></div>
+      <h3 class="sistema-subtitulo">Acessos ativos</h3>
+      <ul id="logins-ativos" class="lista-simples"></ul>
+      <h3 class="sistema-subtitulo">Recusados e bloqueados</h3>
+      <ul id="logins-outros" class="lista-simples"></ul>
+      <p id="logins-status" class="status-message"></p>
     </section>
 
     <section class="card">
@@ -537,6 +665,33 @@
           </form>
         </section>
 
+        <section class="card" id="ajustes-senha-card" hidden>
+          <h2>Senha de acesso</h2>
+          <p class="field-hint">Sua senha é pessoal: não compartilhe com ninguém. Ao trocar, todos os outros aparelhos em que você está conectado são desconectados.</p>
+          <form id="trocar-senha-form" class="lancamento-form" novalidate>
+            <input type="email" id="trocar-senha-usuario" class="visualmente-oculto" autocomplete="username" tabindex="-1" aria-hidden="true" readonly>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="trocar-senha-atual">Senha atual</label>
+                <div class="campo-senha"><input type="password" id="trocar-senha-atual" autocomplete="current-password" maxlength="128"></div>
+              </div>
+              <div class="form-field">
+                <label for="trocar-senha-nova">Nova senha</label>
+                <div class="campo-senha"><input type="password" id="trocar-senha-nova" autocomplete="new-password" maxlength="128"></div>
+                <div class="forca-senha" data-forca-de="trocar-senha-nova" data-email-de="trocar-senha-usuario"><div class="forca-barra"><span></span></div><p class="forca-texto"></p></div>
+              </div>
+              <div class="form-field">
+                <label for="trocar-senha-confirmar">Repita a nova senha</label>
+                <div class="campo-senha"><input type="password" id="trocar-senha-confirmar" autocomplete="new-password" maxlength="128"></div>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit" id="btn-trocar-senha">Trocar senha</button>
+              <span id="trocar-senha-status" class="status-message" role="alert" aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
+
         <section class="card" id="ajustes-trocar-empresa-card" hidden>
           <h2>Trocar de empresa</h2>
           <p>Sua conta tem acesso a mais de uma empresa neste app.</p>
@@ -575,7 +730,7 @@
                   </select>
                 </div>
               </div>
-              <p class="field-hint" id="usuario-add-hint">Ao adicionar, o app já reconhece este e-mail. Para o Google permitir o acesso, compartilhe também a planilha desta empresa no Google Drive com o mesmo e-mail (Editor para quem lança dados, Leitor para quem só consulta).</p>
+              <p class="field-hint" id="usuario-add-hint">Ao adicionar, a pessoa já pode entrar com esse e-mail: pela conta Google ou, se ela tiver um acesso com senha aprovado, com e-mail e senha.</p>
               <div class="form-actions">
                 <button type="submit" id="btn-usuario-add">Adicionar</button>
                 <span id="usuario-add-status" class="status-message"></span>
@@ -682,6 +837,8 @@
 <script src="js/config.js"></script>
 <script src="js/tenants.js"></script>
 <script src="js/segmentos.js"></script>
+<script src="js/senha.js"></script>
+<script src="js/login-senha.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/sheets.js"></script>
 <script src="js/esquema.js"></script>

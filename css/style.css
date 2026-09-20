@@ -2926,3 +2926,248 @@ td select {
     padding: 1rem 1rem 2rem;
   }
 }
+
+/* ---- Login with e-mail + password ---- */
+.auth-divisor {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin: 1.4rem 0 1.1rem;
+  color: var(--color-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.auth-divisor::before,
+.auth-divisor::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.auth-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.auth-campo label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-muted);
+}
+
+.auth-opcional {
+  font-weight: 400;
+  color: var(--color-subtle);
+}
+
+.auth-campo input[type="text"],
+.auth-campo input[type="email"],
+.auth-campo input[type="password"],
+.campo-senha input {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 0.72rem 0.85rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.95rem;
+}
+
+.auth-codigo {
+  font-family: var(--font-mono);
+  font-size: 1.35rem !important;
+  letter-spacing: 0.4em;
+  text-align: center;
+}
+
+.campo-senha {
+  position: relative;
+}
+
+.campo-senha input {
+  padding-right: 3rem;
+}
+
+.btn-ver-senha {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.btn-ver-senha:hover {
+  color: var(--color-text);
+  background: var(--color-surface-2);
+}
+
+.btn-ver-senha:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.btn-ver-senha svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.btn-ver-senha .olho-risco {
+  display: none;
+}
+
+.btn-ver-senha.aberto .olho-risco {
+  display: block;
+}
+
+.forca-senha {
+  margin-top: 0.15rem;
+}
+
+.forca-senha .forca-barra {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.forca-senha .forca-barra span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--color-danger);
+  transition: width 0.15s ease, background-color 0.15s ease;
+}
+
+.forca-senha[data-nivel="1"] .forca-barra span { width: 25%; background: var(--color-danger); }
+.forca-senha[data-nivel="2"] .forca-barra span { width: 50%; background: var(--color-accent); }
+.forca-senha[data-nivel="3"] .forca-barra span { width: 75%; background: var(--color-accent); }
+.forca-senha[data-nivel="4"] .forca-barra span { width: 100%; background: var(--color-success, var(--color-accent)); }
+
+.forca-senha .forca-texto {
+  margin: 0.3rem 0 0;
+  min-height: 1.1em;
+  font-size: 0.76rem;
+  color: var(--color-muted);
+}
+
+.auth-btn {
+  width: 100%;
+  border: none;
+  border-radius: 10px;
+  padding: 0.85rem 1.25rem;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-accent);
+  transition: background-color 0.12s ease, transform 0.1s ease;
+}
+
+.auth-btn:hover {
+  background: var(--color-accent-hover);
+  transform: translateY(-1px);
+}
+
+.auth-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.auth-links {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.link-btn {
+  padding: 0.2rem 0;
+  border: none;
+  background: none;
+  color: var(--color-accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  color: var(--color-subtle);
+  cursor: default;
+  text-decoration: none;
+}
+
+.auth-dica {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-subtle);
+}
+
+.auth-form .status-message:empty {
+  display: none;
+}
+
+#login-senha-form .status-message,
+.auth-form .status-message {
+  margin: 0;
+}
+
+.visualmente-oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+.sistema-subtitulo {
+  margin: 1.4rem 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.login-acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}

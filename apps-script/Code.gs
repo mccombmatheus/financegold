@@ -42,7 +42,7 @@ const GATEWAY_CONFIG = {
 
 // Shown by the public banner (a GET on the /exec URL) so it is easy to confirm
 // which version of this file is really deployed.
-const GATEWAY_VERSION = "2026-09-20-cadastro-de-pessoas";
+const GATEWAY_VERSION = "2026-09-21-login-com-senha";
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
@@ -254,6 +254,10 @@ function realDeps_() {
     },
     registry: registryDeps_(cache),
     requests: requestsDeps_(),
+    logins: loginsDeps_(cache),
+    secrets: secretsDeps_(),
+    now: () => Date.now(),
+    randomHex: randomHex_,
     mail: {
       // Plain text only, addressed to fixed recipients or to the requester.
       send: (msg) => MailApp.sendEmail({ to: msg.to, subject: msg.subject, body: msg.body, name: "Finan." }),
@@ -471,9 +475,13 @@ function companyMap_(deps) {
 
 function handleRequest(body, deps) {
   if (!body || typeof body !== "object") throw new GatewayError_(400, "Requisição inválida.");
-  const email = deps.verifyToken(body.token);
+  if (PW_PUBLIC_ACTIONS.indexOf(body.action) !== -1) return despacharPublico_(body, deps);
+  // Two kinds of proof: a Google token (checked with Google) or a session of the
+  // e-mail + password login ("fs1.…", signed by this script).
+  const sessaoSenha = typeof body.token === "string" && body.token.indexOf("fs1.") === 0;
+  const email = sessaoSenha ? verificarSessaoSenha_(deps, body.token) : deps.verifyToken(body.token);
   try {
-    return despachar_(body, deps, email);
+    return despachar_(body, deps, email, sessaoSenha);
   } catch (err) {
     if (err instanceof GatewayError_) throw err;
     console.error(err);
@@ -490,9 +498,12 @@ function detalheSeguro_(err) {
   return texto.length > 220 ? texto.slice(0, 220) + "…" : texto;
 }
 
-function despachar_(body, deps, email) {
+function despachar_(body, deps, email, sessaoSenha) {
   const action = body.action;
 
+  if (action === "pwTrocarSenha") return acaoPwTrocarSenha_(deps, email, sessaoSenha, body);
+  if (action === "pwListar") return acaoPwListar_(deps, email);
+  if (action === "pwDecidir") return acaoPwDecidir_(deps, email, body);
   if (action === "me") return actionMe_(deps, email);
   if (action === "createCompany") return actionCreateCompany_(deps, email, body);
   if (action === "requestAccess") return actionRequestAccess_(deps, email, body);
@@ -1028,5 +1039,583 @@ function actionAddTab_(deps, access, body) {
     deps.sheets.addTab(body.spreadsheetId, body.title);
     deps.cache.remove(body.title === USUARIOS_TAB ? "usr_" + body.spreadsheetId : "cfg_" + body.spreadsheetId);
     return { created: true };
+  });
+}
+
+// ===========================================================================
+// Login with e-mail + password (alongside Google sign-in)
+//
+// How it stays safe with no server of our own:
+//  - The browser NEVER sends the password. It derives a 256-bit key from it
+//    (PBKDF2-SHA256, 210,000 rounds, salted with the e-mail) and sends only that.
+//  - This script never stores that key either: it keeps HMAC-SHA256(secret
+//    "pepper", random per-user salt | key). The pepper lives in the script's
+//    private properties, so a copy of the Logins sheet alone cannot be attacked.
+//  - Signing up needs (1) a code e-mailed to the address (proves the mailbox is
+//    theirs) and (2) the system administrator's approval. Only then is the login active.
+//  - Wrong passwords lock the account for 15 minutes after 5 tries; e-mails sent
+//    by the public actions are rate limited; answers never reveal whether an
+//    e-mail is registered.
+//  - A session is a signed, expiring token (fs1.…): changing the password or
+//    blocking the login kills every session at once.
+// ===========================================================================
+
+const LOGINS_TAB = "Logins";
+const LOGIN_HEADERS = ["E-mail", "Nome", "Empresa", "Mensagem", "Situação", "Sal", "Verificador", "Versão", "Criado em", "Decidido em", "Código", "Código expira", "Tentativas do código", "Último acesso", "E-mail como digitado"];
+const LG = { EMAIL: 0, NOME: 1, EMPRESA: 2, MSG: 3, SIT: 4, SAL: 5, VER: 6, VERSAO: 7, CRIADO: 8, DECIDIDO: 9, CODIGO: 10, CODIGO_EXP: 11, CODIGO_TENT: 12, ULTIMO: 13, DIGITADO: 14 };
+const SIT = { EMAIL: "Aguardando e-mail", APROVACAO: "Aguardando aprovação", ATIVO: "Ativo", RECUSADO: "Recusado", BLOQUEADO: "Bloqueado" };
+const PW_PUBLIC_ACTIONS = ["pwRegister", "pwConfirmar", "pwLogin", "pwEsqueci", "pwRedefinir"];
+const PW_SESSION_MS = 12 * 60 * 60 * 1000;
+const PW_CODE_MS = 15 * 60 * 1000;
+const PW_CODE_MAX_TRIES = 5;
+const PW_MAX_FAILS = 5;
+const PW_LOCK_SECONDS = 15 * 60;
+const PW_MAIL_COOLDOWN_SECONDS = 60;
+const PW_MAIL_MAX_PER_WINDOW = 5;
+const PW_MAIL_WINDOW_SECONDS = 6 * 60 * 60;
+const PW_MAIL_GLOBAL_PER_HOUR = 60;
+const PW_MAX_LOGINS = 2000;
+const PW_MAX_PENDING = 200;
+const PW_KEY_FORMAT = /^[A-Za-z0-9_-]{43}$/;
+
+// ---- SHA-256 / HMAC in plain JavaScript (no Apps Script service needed, so the
+// ---- same code runs in the browser tests; checked against the official test vectors).
+let sha256Tabelas_ = null;
+
+function sha256Tabelas() {
+  if (sha256Tabelas_) return sha256Tabelas_;
+  const primos = [];
+  for (let n = 2; primos.length < 64; n += 1) {
+    let ehPrimo = true;
+    for (let d = 2; d * d <= n; d += 1) {
+      if (n % d === 0) {
+        ehPrimo = false;
+        break;
+      }
+    }
+    if (ehPrimo) primos.push(n);
+  }
+  const fracao32 = (x) => Math.floor((x - Math.floor(x)) * 4294967296) >>> 0;
+  sha256Tabelas_ = { K: primos.map((p) => fracao32(Math.cbrt(p))), H: primos.slice(0, 8).map((p) => fracao32(Math.sqrt(p))) };
+  return sha256Tabelas_;
+}
+
+function girar_(x, n) {
+  return ((x >>> n) | (x << (32 - n))) >>> 0;
+}
+
+function utf8Bytes_(texto) {
+  const binario = unescape(encodeURIComponent(String(texto)));
+  const out = [];
+  for (let i = 0; i < binario.length; i += 1) out.push(binario.charCodeAt(i));
+  return out;
+}
+
+function sha256Bytes_(mensagem) {
+  const t = sha256Tabelas();
+  const h = t.H.slice();
+  const tamanho = mensagem.length;
+  const bytes = mensagem.slice();
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  const bitsAlto = Math.floor((tamanho * 8) / 4294967296);
+  const bitsBaixo = (tamanho * 8) >>> 0;
+  for (let i = 3; i >= 0; i -= 1) bytes.push((bitsAlto >>> (i * 8)) & 0xff);
+  for (let i = 3; i >= 0; i -= 1) bytes.push((bitsBaixo >>> (i * 8)) & 0xff);
+  const w = new Array(64);
+  for (let inicio = 0; inicio < bytes.length; inicio += 64) {
+    for (let i = 0; i < 16; i += 1) {
+      const j = inicio + i * 4;
+      w[i] = ((bytes[j] << 24) | (bytes[j + 1] << 16) | (bytes[j + 2] << 8) | bytes[j + 3]) >>> 0;
+    }
+    for (let i = 16; i < 64; i += 1) {
+      const s0 = girar_(w[i - 15], 7) ^ girar_(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = girar_(w[i - 2], 17) ^ girar_(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], k = h[7];
+    for (let i = 0; i < 64; i += 1) {
+      const S1 = girar_(e, 6) ^ girar_(e, 11) ^ girar_(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (k + S1 + ch + t.K[i] + w[i]) >>> 0;
+      const S0 = girar_(a, 2) ^ girar_(a, 13) ^ girar_(a, 22);
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      k = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    h[0] = (h[0] + a) >>> 0; h[1] = (h[1] + b) >>> 0; h[2] = (h[2] + c) >>> 0; h[3] = (h[3] + d) >>> 0;
+    h[4] = (h[4] + e) >>> 0; h[5] = (h[5] + f) >>> 0; h[6] = (h[6] + g) >>> 0; h[7] = (h[7] + k) >>> 0;
+  }
+  const saida = [];
+  h.forEach((palavra) => {
+    saida.push((palavra >>> 24) & 0xff, (palavra >>> 16) & 0xff, (palavra >>> 8) & 0xff, palavra & 0xff);
+  });
+  return saida;
+}
+
+function hexDeBytes_(bytes) {
+  return bytes.map((b) => ("0" + b.toString(16)).slice(-2)).join("");
+}
+
+function hmacSha256Bytes_(chaveBytes, mensagemBytes) {
+  let chave = chaveBytes.length > 64 ? sha256Bytes_(chaveBytes) : chaveBytes.slice();
+  while (chave.length < 64) chave.push(0);
+  const interna = chave.map((b) => b ^ 0x36).concat(mensagemBytes);
+  const externa = chave.map((b) => b ^ 0x5c).concat(sha256Bytes_(interna));
+  return sha256Bytes_(externa);
+}
+
+function hmacSha256Hex_(chave, mensagem) {
+  return hexDeBytes_(hmacSha256Bytes_(utf8Bytes_(chave), utf8Bytes_(mensagem)));
+}
+
+// Comparison that takes the same time whatever the first difference is.
+function iguaisEmTempoConstante_(a, b) {
+  const x = String(a);
+  const y = String(b);
+  let diferenca = x.length ^ y.length;
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i += 1) diferenca |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
+  return diferenca === 0;
+}
+
+// n random bytes as hex. Apps Script's UUIDs are random v4: the fixed version and variant nibbles are skipped.
+function randomHex_(nBytes) {
+  let out = "";
+  while (out.length < nBytes * 2) {
+    const u = Utilities.getUuid().replace(/-/g, "");
+    out += u.slice(0, 12) + u.slice(13, 16) + u.slice(17);
+  }
+  return out.slice(0, nBytes * 2);
+}
+
+function secretsDeps_() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    get: () => {
+      let pepper = props.getProperty("PW_PEPPER");
+      let sessao = props.getProperty("PW_SESSION_KEY");
+      if (!pepper || !sessao) {
+        // First use: create the two secrets once. LOSING them invalidates every password and session.
+        pepper = pepper || randomHex_(32);
+        sessao = sessao || randomHex_(32);
+        props.setProperty("PW_PEPPER", pepper);
+        props.setProperty("PW_SESSION_KEY", sessao);
+      }
+      return { pepper: pepper, sessionKey: sessao };
+    },
+  };
+}
+
+// The Logins tab lives in the registry spreadsheet (created on first use).
+function loginsDeps_(cache) {
+  const props = PropertiesService.getScriptProperties();
+
+  function planilha_() {
+    let id = props.getProperty(REGISTRY_PROP);
+    if (!id) {
+      const criada = Sheets.Spreadsheets.create({ properties: { title: REGISTRY_TITLE }, sheets: [{ properties: { title: "Empresas" } }] });
+      id = criada.spreadsheetId;
+      Sheets.Spreadsheets.Values.update({ values: [["ID da planilha", "Empresa", "Criada em", "Criada por", "Ativa", "Segmento"]] }, id, "Empresas!A1:F1", { valueInputOption: "RAW" });
+      props.setProperty(REGISTRY_PROP, id);
+    }
+    const titulos = (Sheets.Spreadsheets.get(id, { fields: "sheets.properties.title" }).sheets || []).map((x) => x.properties.title);
+    if (titulos.indexOf(LOGINS_TAB) === -1) {
+      Sheets.Spreadsheets.batchUpdate({ requests: [{ addSheet: { properties: { title: LOGINS_TAB } } }] }, id);
+      Sheets.Spreadsheets.Values.update({ values: [LOGIN_HEADERS] }, id, LOGINS_TAB + "!A1:O1", { valueInputOption: "RAW" });
+    }
+    return id;
+  }
+
+  function normalizar_(linha) {
+    const c = [];
+    for (let i = 0; i < LOGIN_HEADERS.length; i += 1) c.push(linha[i] === undefined || linha[i] === null ? "" : linha[i]);
+    return c;
+  }
+
+  return {
+    list: () => {
+      const guardado = cache.get("lgs_list");
+      if (guardado) return JSON.parse(guardado);
+      if (!props.getProperty(REGISTRY_PROP)) return [];
+      const dados = Sheets.Spreadsheets.Values.get(planilha_(), LOGINS_TAB + "!A2:O", { valueRenderOption: "UNFORMATTED_VALUE" });
+      const lista = (dados.values || []).map((linha, i) => ({ linha: i + 2, c: normalizar_(linha) })).filter((l) => l.c[LG.EMAIL] !== "");
+      cache.put("lgs_list", JSON.stringify(lista), 20);
+      return lista;
+    },
+    add: (c) => {
+      const id = planilha_();
+      const existentes = Sheets.Spreadsheets.Values.get(id, LOGINS_TAB + "!A2:A");
+      const proxima = (existentes.values || []).length + 2;
+      Sheets.Spreadsheets.Values.update({ values: [normalizar_(c)] }, id, LOGINS_TAB + "!A" + proxima + ":O" + proxima, { valueInputOption: "RAW" });
+      cache.remove("lgs_list");
+    },
+    update: (linha, c) => {
+      Sheets.Spreadsheets.Values.update({ values: [normalizar_(c)] }, planilha_(), LOGINS_TAB + "!A" + linha + ":O" + linha, { valueInputOption: "RAW" });
+      cache.remove("lgs_list");
+    },
+  };
+}
+
+// ---- helpers ---------------------------------------------------------------
+
+function chaveDeSenhaValida_(chave) {
+  return typeof chave === "string" && PW_KEY_FORMAT.test(chave);
+}
+
+function emailValido_(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 120;
+}
+
+function acharLogin_(deps, canon) {
+  return deps.logins.list().filter((l) => l.c[LG.EMAIL] === canon)[0] || null;
+}
+
+function enviarEmailSeguro_(deps, para, assunto, corpo) {
+  try {
+    deps.mail.send({ to: para, subject: assunto, body: corpo });
+    return true;
+  } catch (err) {
+    console.error(err);
+    return false;
+  }
+}
+
+// At most one e-mail a minute and 5 per 6 hours to one address, 60 an hour overall:
+// the public actions send e-mails on request, so they must not be a way to spam anyone.
+function limitarEmails_(deps, canon) {
+  const cooldown = "pwmail_" + canon;
+  if (deps.cache.get(cooldown)) throw new GatewayError_(429, "Aguarde um minuto antes de pedir outro e-mail.");
+  const chaveN = "pwmailn_" + canon;
+  const n = Number(deps.cache.get(chaveN) || 0);
+  if (n >= PW_MAIL_MAX_PER_WINDOW) throw new GatewayError_(429, "Já enviamos vários e-mails para este endereço. Tente de novo mais tarde.");
+  const chaveG = "pwmailg_" + Math.floor(deps.now() / 3600000);
+  const g = Number(deps.cache.get(chaveG) || 0);
+  if (g >= PW_MAIL_GLOBAL_PER_HOUR) throw new GatewayError_(429, "O serviço está muito ocupado agora. Tente de novo em alguns minutos.");
+  deps.cache.put(cooldown, "1", PW_MAIL_COOLDOWN_SECONDS);
+  deps.cache.put(chaveN, String(n + 1), PW_MAIL_WINDOW_SECONDS);
+  deps.cache.put(chaveG, String(g + 1), 3700);
+}
+
+function gerarCodigo_(deps) {
+  const n = parseInt(deps.randomHex(8).slice(0, 10), 16) % 1000000;
+  return ("00000" + n).slice(-6);
+}
+
+function hashDoCodigo_(secrets, canon, codigo) {
+  return hmacSha256Hex_(secrets.pepper, "code|" + canon + "|" + codigo);
+}
+
+function codigoDeSeisDigitos_(valor) {
+  const digitos = String(valor === undefined || valor === null ? "" : valor).replace(/\D/g, "");
+  if (digitos.length !== 6) throw new GatewayError_(400, "Digite os 6 números do código que enviamos por e-mail.");
+  return digitos;
+}
+
+// Checks the e-mailed code of a login row. A wrong code counts; 5 wrong ones cancel it.
+function conferirCodigo_(deps, login, canon, codigo, secrets) {
+  const c = login.c;
+  const falha = () => new GatewayError_(400, "Código incorreto ou expirado. Peça um novo.");
+  if (!c[LG.CODIGO] || Number(c[LG.CODIGO_EXP]) < deps.now() || Number(c[LG.CODIGO_TENT]) >= PW_CODE_MAX_TRIES) throw falha();
+  if (iguaisEmTempoConstante_(hashDoCodigo_(secrets, canon, codigo), c[LG.CODIGO])) return;
+  const novas = Number(c[LG.CODIGO_TENT]) + 1;
+  const copia = c.slice();
+  copia[LG.CODIGO_TENT] = novas;
+  if (novas >= PW_CODE_MAX_TRIES) copia[LG.CODIGO] = "";
+  deps.logins.update(login.linha, copia);
+  throw falha();
+}
+
+function definirSenha_(secrets, deps, c, chave) {
+  const sal = deps.randomHex(16);
+  c[LG.SAL] = sal;
+  c[LG.VER] = hmacSha256Hex_(secrets.pepper, sal + "|" + chave);
+  c[LG.VERSAO] = Number(c[LG.VERSAO] || 0) + 1;
+  c[LG.CODIGO] = "";
+  c[LG.CODIGO_EXP] = "";
+  c[LG.CODIGO_TENT] = 0;
+}
+
+function emailsDoSistema_(deps) {
+  return deps.config.ADMIN_EMAILS.join(",");
+}
+
+// ---- sessions ----------------------------------------------------------------
+
+function emitirSessao_(deps, login) {
+  const secrets = deps.secrets.get();
+  const expira = deps.now() + PW_SESSION_MS;
+  const emailHex = hexDeBytes_(utf8Bytes_(limparEmail_(login.c[LG.DIGITADO])));
+  const versao = Number(login.c[LG.VERSAO]);
+  const assinatura = hmacSha256Hex_(secrets.sessionKey, "s|" + emailHex + "|" + expira + "|" + versao);
+  return { token: "fs1." + emailHex + "." + expira + "." + versao + "." + assinatura, expiraEm: expira };
+}
+
+function verificarSessaoSenha_(deps, token) {
+  const expirada = () => new GatewayError_(401, "Sessão expirada. Entre novamente.");
+  if (typeof token !== "string" || token.length > 600) throw expirada();
+  const partes = token.split(".");
+  if (partes.length !== 5 || partes[0] !== "fs1" || !/^[0-9a-f]{2,400}$/.test(partes[1]) || !/^\d{10,16}$/.test(partes[2]) || !/^\d{1,9}$/.test(partes[3])) throw expirada();
+  const secrets = deps.secrets.get();
+  const esperada = hmacSha256Hex_(secrets.sessionKey, "s|" + partes[1] + "|" + partes[2] + "|" + partes[3]);
+  if (!iguaisEmTempoConstante_(esperada, partes[4])) throw expirada();
+  if (Number(partes[2]) < deps.now()) throw expirada();
+  let email = "";
+  try {
+    const bytes = partes[1].match(/../g).map((h) => parseInt(h, 16));
+    email = decodeURIComponent(bytes.map((b) => "%" + ("0" + b.toString(16)).slice(-2)).join(""));
+  } catch (err) {
+    throw expirada();
+  }
+  const login = acharLogin_(deps, canonEmail_(email));
+  if (!login || login.c[LG.SIT] !== SIT.ATIVO || Number(login.c[LG.VERSAO]) !== Number(partes[3])) throw expirada();
+  return limparEmail_(login.c[LG.DIGITADO]);
+}
+
+// ---- public actions (no token) -----------------------------------------------
+
+function despacharPublico_(body, deps) {
+  try {
+    switch (body.action) {
+      case "pwRegister": return acaoPwRegister_(deps, body);
+      case "pwConfirmar": return acaoPwConfirmar_(deps, body);
+      case "pwLogin": return acaoPwLogin_(deps, body);
+      case "pwEsqueci": return acaoPwEsqueci_(deps, body);
+      default: return acaoPwRedefinir_(deps, body);
+    }
+  } catch (err) {
+    if (err instanceof GatewayError_) throw err;
+    console.error(err);
+    // Nothing internal is put in an answer to someone who has not proved who they are.
+    throw new GatewayError_(500, "Erro interno no servidor do app.");
+  }
+}
+
+function acaoPwRegister_(deps, body) {
+  const email = limparEmail_(body.email);
+  const canon = canonEmail_(email);
+  if (!emailValido_(email)) throw new GatewayError_(400, "Informe um e-mail válido.");
+  const nome = cleanText_(body.nome, 80, false);
+  if (!nome) throw new GatewayError_(400, "Informe o seu nome.");
+  const empresa = cleanText_(body.empresa, 80, false);
+  const mensagem = cleanText_(body.mensagem, 500, true);
+  if (!chaveDeSenhaValida_(body.chave)) throw new GatewayError_(400, "Senha inválida.");
+
+  return deps.lock(() => {
+    limitarEmails_(deps, canon);
+    const secrets = deps.secrets.get();
+    const atual = acharLogin_(deps, canon);
+    if (atual && atual.c[LG.SIT] !== SIT.EMAIL) {
+      // The answer is the same as for a new sign-up: nobody can probe which addresses exist.
+      enviarEmailSeguro_(deps, email, "Finan.: você já tem cadastro", "Olá!\n\nRecebemos um pedido de cadastro com este e-mail, mas ele já existe.\n\nSe foi você, use \"Esqueci minha senha\" na tela de entrada para criar uma nova senha. Se não foi você, pode ignorar esta mensagem.\n");
+      return { enviado: true };
+    }
+    if (!atual) {
+      const lista = deps.logins.list();
+      if (lista.length >= PW_MAX_LOGINS) throw new GatewayError_(503, "Limite de cadastros atingido.");
+      if (lista.filter((l) => l.c[LG.SIT] === SIT.EMAIL || l.c[LG.SIT] === SIT.APROVACAO).length >= PW_MAX_PENDING) throw new GatewayError_(503, "Muitos cadastros em análise. Tente mais tarde.");
+    }
+    const codigo = gerarCodigo_(deps);
+    const c = atual ? atual.c.slice() : LOGIN_HEADERS.map(() => "");
+    c[LG.EMAIL] = canon;
+    c[LG.NOME] = nome;
+    c[LG.EMPRESA] = empresa;
+    c[LG.MSG] = mensagem;
+    c[LG.SIT] = SIT.EMAIL;
+    c[LG.CRIADO] = new Date(deps.now()).toISOString();
+    c[LG.DIGITADO] = email;
+    definirSenha_(secrets, deps, c, body.chave);
+    c[LG.CODIGO] = hashDoCodigo_(secrets, canon, codigo);
+    c[LG.CODIGO_EXP] = deps.now() + PW_CODE_MS;
+    c[LG.CODIGO_TENT] = 0;
+    if (atual) deps.logins.update(atual.linha, c);
+    else deps.logins.add(c);
+    const enviado = enviarEmailSeguro_(deps, email, "Finan.: seu código de confirmação", "Olá, " + nome + "!\n\nSeu código de confirmação é: " + codigo + "\n\nEle vale por 15 minutos. Digite-o no Finan. para confirmar este e-mail.\n\nSe você não pediu este cadastro, ignore esta mensagem.\n");
+    if (!enviado) throw new GatewayError_(503, "Não foi possível enviar o e-mail agora. Tente de novo em alguns minutos.");
+    return { enviado: true };
+  });
+}
+
+function acaoPwConfirmar_(deps, body) {
+  const canon = canonEmail_(limparEmail_(body.email));
+  const codigo = codigoDeSeisDigitos_(body.codigo);
+  return deps.lock(() => {
+    const secrets = deps.secrets.get();
+    const login = acharLogin_(deps, canon);
+    if (!login || login.c[LG.SIT] !== SIT.EMAIL) throw new GatewayError_(400, "Código incorreto ou expirado. Peça um novo.");
+    conferirCodigo_(deps, login, canon, codigo, secrets);
+    const c = login.c.slice();
+    c[LG.SIT] = SIT.APROVACAO;
+    c[LG.CODIGO] = "";
+    c[LG.CODIGO_EXP] = "";
+    c[LG.CODIGO_TENT] = 0;
+    deps.logins.update(login.linha, c);
+    enviarEmailSeguro_(
+      deps,
+      emailsDoSistema_(deps),
+      "Finan.: novo login com senha para aprovar — " + c[LG.NOME],
+      "Um novo login com e-mail e senha foi criado e o e-mail já foi confirmado.\n\nNome: " + c[LG.NOME] + "\nE-mail: " + c[LG.DIGITADO] + "\nEmpresa: " + (c[LG.EMPRESA] || "(não informada)") + "\nMensagem: " + (c[LG.MSG] || "(sem mensagem)") + "\n\nPara liberar (ou recusar), entre em " + deps.config.APP_URL + " e abra o Painel do sistema > Logins com senha.\n"
+    );
+    return { situacao: SIT.APROVACAO };
+  });
+}
+
+function acaoPwLogin_(deps, body) {
+  const generico = () => new GatewayError_(403, "E-mail ou senha incorretos.");
+  const canon = canonEmail_(limparEmail_(body.email));
+  if (!chaveDeSenhaValida_(body.chave) || !canon) throw generico();
+  const chaveFalhas = "pwfail_" + canon;
+  const falhas = Number(deps.cache.get(chaveFalhas) || 0);
+  if (falhas >= PW_MAX_FAILS) throw new GatewayError_(429, "Muitas tentativas. Aguarde 15 minutos e tente de novo.");
+  const secrets = deps.secrets.get();
+  const login = acharLogin_(deps, canon);
+  // The same work is done whether or not the address exists (no timing hint).
+  const calculado = hmacSha256Hex_(secrets.pepper, (login ? login.c[LG.SAL] : "0000000000000000") + "|" + body.chave);
+  const certo = login && iguaisEmTempoConstante_(calculado, login.c[LG.VER]);
+  if (!certo) {
+    deps.cache.put(chaveFalhas, String(falhas + 1), PW_LOCK_SECONDS);
+    throw generico();
+  }
+  deps.cache.remove(chaveFalhas);
+  const situacao = login.c[LG.SIT];
+  if (situacao === SIT.EMAIL) throw new GatewayError_(403, "Falta confirmar o seu e-mail. Use \"Criar acesso\" de novo para receber outro código.");
+  if (situacao === SIT.APROVACAO) throw new GatewayError_(403, "Seu cadastro está aguardando a aprovação do administrador. Você receberá um e-mail quando for liberado.");
+  if (situacao !== SIT.ATIVO) throw new GatewayError_(403, "Este acesso não está liberado. Fale com o administrador.");
+  const sessao = emitirSessao_(deps, login);
+  deps.lock(() => {
+    const atual = acharLogin_(deps, canon);
+    if (!atual) return;
+    const c = atual.c.slice();
+    c[LG.ULTIMO] = new Date(deps.now()).toISOString();
+    deps.logins.update(atual.linha, c);
+  });
+  return { token: sessao.token, expiraEm: sessao.expiraEm, email: limparEmail_(login.c[LG.DIGITADO]), nome: String(login.c[LG.NOME] || "") };
+}
+
+function acaoPwEsqueci_(deps, body) {
+  const email = limparEmail_(body.email);
+  const canon = canonEmail_(email);
+  if (!emailValido_(email)) throw new GatewayError_(400, "Informe um e-mail válido.");
+  return deps.lock(() => {
+    limitarEmails_(deps, canon);
+    const secrets = deps.secrets.get();
+    const login = acharLogin_(deps, canon);
+    if (login && login.c[LG.SIT] === SIT.ATIVO) {
+      const codigo = gerarCodigo_(deps);
+      const c = login.c.slice();
+      c[LG.CODIGO] = hashDoCodigo_(secrets, canon, codigo);
+      c[LG.CODIGO_EXP] = deps.now() + PW_CODE_MS;
+      c[LG.CODIGO_TENT] = 0;
+      deps.logins.update(login.linha, c);
+      enviarEmailSeguro_(deps, email, "Finan.: código para criar uma nova senha", "Olá!\n\nSeu código para criar uma nova senha é: " + codigo + "\n\nEle vale por 15 minutos. Se você não pediu, ignore esta mensagem: sua senha atual continua valendo.\n");
+    }
+    // Same answer whether or not the address has a login.
+    return { enviado: true };
+  });
+}
+
+function acaoPwRedefinir_(deps, body) {
+  const canon = canonEmail_(limparEmail_(body.email));
+  const codigo = codigoDeSeisDigitos_(body.codigo);
+  if (!chaveDeSenhaValida_(body.chave)) throw new GatewayError_(400, "Senha inválida.");
+  return deps.lock(() => {
+    const secrets = deps.secrets.get();
+    const login = acharLogin_(deps, canon);
+    if (!login || login.c[LG.SIT] !== SIT.ATIVO) throw new GatewayError_(400, "Código incorreto ou expirado. Peça um novo.");
+    conferirCodigo_(deps, login, canon, codigo, secrets);
+    const c = login.c.slice();
+    definirSenha_(secrets, deps, c, body.chave);
+    deps.logins.update(login.linha, c);
+    deps.cache.remove("pwfail_" + canon);
+    enviarEmailSeguro_(deps, limparEmail_(c[LG.DIGITADO]), "Finan.: sua senha foi alterada", "Olá, " + c[LG.NOME] + ".\n\nA senha do seu acesso ao Finan. acabou de ser alterada. Se não foi você, peça imediatamente ao administrador para bloquear o seu acesso.\n");
+    return { redefinida: true };
+  });
+}
+
+// ---- actions for a signed-in person / the administrator ----------------------
+
+function acaoPwTrocarSenha_(deps, email, sessaoSenha, body) {
+  if (!sessaoSenha) throw new GatewayError_(403, "Só quem entrou com e-mail e senha pode trocar a senha por aqui.");
+  if (!chaveDeSenhaValida_(body.atual) || !chaveDeSenhaValida_(body.nova)) throw new GatewayError_(400, "Senha inválida.");
+  const canon = canonEmail_(email);
+  const chaveFalhas = "pwfail_" + canon;
+  const falhas = Number(deps.cache.get(chaveFalhas) || 0);
+  if (falhas >= PW_MAX_FAILS) throw new GatewayError_(429, "Muitas tentativas. Aguarde 15 minutos e tente de novo.");
+  return deps.lock(() => {
+    const secrets = deps.secrets.get();
+    const login = acharLogin_(deps, canon);
+    if (!login || login.c[LG.SIT] !== SIT.ATIVO) throw new GatewayError_(401, "Sessão expirada. Entre novamente.");
+    const calculado = hmacSha256Hex_(secrets.pepper, login.c[LG.SAL] + "|" + body.atual);
+    if (!iguaisEmTempoConstante_(calculado, login.c[LG.VER])) {
+      deps.cache.put(chaveFalhas, String(falhas + 1), PW_LOCK_SECONDS);
+      throw new GatewayError_(403, "A senha atual está incorreta.");
+    }
+    deps.cache.remove(chaveFalhas);
+    const c = login.c.slice();
+    definirSenha_(secrets, deps, c, body.nova);
+    deps.logins.update(login.linha, c);
+    enviarEmailSeguro_(deps, limparEmail_(c[LG.DIGITADO]), "Finan.: sua senha foi alterada", "Olá, " + c[LG.NOME] + ".\n\nA senha do seu acesso ao Finan. acabou de ser alterada. Se não foi você, peça imediatamente ao administrador para bloquear o seu acesso.\n");
+    const sessao = emitirSessao_(deps, { c: c });
+    return { token: sessao.token, expiraEm: sessao.expiraEm };
+  });
+}
+
+function resumoDoLogin_(l) {
+  return {
+    email: limparEmail_(l.c[LG.DIGITADO]),
+    nome: String(l.c[LG.NOME] || ""),
+    empresa: String(l.c[LG.EMPRESA] || ""),
+    mensagem: String(l.c[LG.MSG] || ""),
+    situacao: String(l.c[LG.SIT]),
+    criadoEm: String(l.c[LG.CRIADO] || ""),
+    ultimoAcesso: String(l.c[LG.ULTIMO] || ""),
+  };
+}
+
+function acaoPwListar_(deps, email) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const todos = deps.logins.list();
+  return {
+    pendentes: todos.filter((l) => l.c[LG.SIT] === SIT.APROVACAO).map(resumoDoLogin_),
+    ativos: todos.filter((l) => l.c[LG.SIT] === SIT.ATIVO).map(resumoDoLogin_),
+    outros: todos.filter((l) => l.c[LG.SIT] === SIT.RECUSADO || l.c[LG.SIT] === SIT.BLOQUEADO).slice(-20).map(resumoDoLogin_),
+  };
+}
+
+// acao: aprovar / recusar (of a pending one), bloquear (of an active one), reativar (of a blocked / declined one).
+function acaoPwDecidir_(deps, email, body) {
+  if (!isAdminEmail_(deps, email)) throw denied_();
+  const canon = canonEmail_(limparEmail_(body.email));
+  const acao = body.acao;
+  const regras = {
+    aprovar: { de: [SIT.APROVACAO], para: SIT.ATIVO },
+    recusar: { de: [SIT.APROVACAO], para: SIT.RECUSADO },
+    bloquear: { de: [SIT.ATIVO], para: SIT.BLOQUEADO },
+    reativar: { de: [SIT.BLOQUEADO, SIT.RECUSADO], para: SIT.ATIVO },
+  };
+  const regra = Object.prototype.hasOwnProperty.call(regras, acao) ? regras[acao] : null;
+  if (!regra) throw new GatewayError_(400, "Ação inválida.");
+  const nota = cleanText_(body.nota, 200, false);
+  return deps.lock(() => {
+    const login = acharLogin_(deps, canon);
+    if (!login) throw new GatewayError_(400, "Login não encontrado.");
+    if (regra.de.indexOf(login.c[LG.SIT]) === -1) throw new GatewayError_(400, "Este login não está mais nessa situação.");
+    const c = login.c.slice();
+    c[LG.SIT] = regra.para;
+    c[LG.DECIDIDO] = new Date(deps.now()).toISOString();
+    if (acao === "bloquear") c[LG.VERSAO] = Number(c[LG.VERSAO]) + 1; // ends every open session at once
+    deps.logins.update(login.linha, c);
+    if (acao === "aprovar" || acao === "recusar") {
+      const para = limparEmail_(c[LG.DIGITADO]);
+      enviarEmailSeguro_(
+        deps,
+        para,
+        acao === "aprovar" ? "Finan.: seu acesso foi liberado" : "Finan.: sobre o seu cadastro",
+        acao === "aprovar"
+          ? "Olá, " + c[LG.NOME] + ".\n\nSeu cadastro foi aprovado. Entre em " + deps.config.APP_URL + " com o seu e-mail (" + para + ") e a senha que você criou.\n\nO acesso aos dados de uma empresa depende de o administrador dela cadastrar o seu e-mail.\n"
+          : "Olá, " + c[LG.NOME] + ".\n\nNão foi possível aprovar o seu cadastro agora." + (nota ? "\n\n" + nota : "") + "\n"
+      );
+    }
+    return { situacao: regra.para };
   });
 }

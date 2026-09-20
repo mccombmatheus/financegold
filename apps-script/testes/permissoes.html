@@ -464,6 +464,232 @@ run("a name that already exists (case-insensitive) is refused", "admin", { actio
   T(negado instanceof GatewayError_ && negado.status === 403 && !/Detalhe/.test(negado.message), "expected refusals keep their plain message (no technical detail)");
 })();
 
+
+// --- login with e-mail + password: cryptography, sign-up, approval, sessions, lockout, reset
+(function () {
+  const T = (cond, name) => results.push((cond ? "PASS " : "FAIL ") + name);
+  const hex = (s) => hexDeBytes_(sha256Bytes_(utf8Bytes_(s)));
+  // official test vectors
+  T(hex("abc") === "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "SHA-256('abc') matches the official vector");
+  T(hex("") === "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "SHA-256('') matches the official vector");
+  T(hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") === "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1", "SHA-256 of a two-block message matches the official vector");
+  T(hex("ação") === "0664077f33cc3ebbaa4bbdacac0eb70e740983080f01dce29929e73b7785a7ad", "SHA-256 of UTF-8 text (accents) is correct");
+  T(hexDeBytes_(hmacSha256Bytes_(new Array(20).fill(0x0b), utf8Bytes_("Hi There"))) === "b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7", "HMAC-SHA256 matches RFC 4231 case 1");
+  T(hmacSha256Hex_("Jefe", "what do ya want for nothing?") === "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843", "HMAC-SHA256 matches RFC 4231 case 2");
+  T(hexDeBytes_(hmacSha256Bytes_(new Array(131).fill(0xaa), utf8Bytes_("Test Using Larger Than Block-Size Key - Hash Key First"))) === "60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54", "HMAC with a key longer than the block matches RFC 4231 case 6");
+  T(iguaisEmTempoConstante_("abc", "abc") && !iguaisEmTempoConstante_("abc", "abd") && !iguaisEmTempoConstante_("abc", "abcd") && !iguaisEmTempoConstante_("", "a"), "constant-time comparison behaves like equality");
+
+  // ---- an in-memory world
+  const K = (c) => (c.repeat(43)).slice(0, 43);            // a "derived key" as the browser would send
+  const SENHA1 = K("A"), SENHA2 = K("B"), SENHA3 = K("C");
+  function mundo() {
+    const w = { agora: 1000000000000, linhas: [], correios: [], contador: 0, cacheMap: {} };
+    const state = freshState();
+    w.state = state;
+    w.deps = function () {
+      const d = makeDeps(state);
+      d.now = () => w.agora;
+      d.randomHex = (n) => hmacSha256Hex_("rnd", String(++w.contador)).repeat(2).slice(0, n * 2);
+      d.secrets = { get: () => ({ pepper: "p".repeat(64), sessionKey: "s".repeat(64) }) };
+      d.mail = { send: (m) => { w.correios.push(m); } };
+      d.cache = {
+        get: (k) => { const e = w.cacheMap[k]; return e && e.ate > w.agora ? e.v : null; },
+        put: (k, v, s) => { w.cacheMap[k] = { v: String(v), ate: w.agora + s * 1000 }; },
+        remove: (k) => { delete w.cacheMap[k]; },
+      };
+      d.logins = {
+        list: () => w.linhas.map((l, i) => ({ linha: i + 2, c: l.slice() })),
+        add: (c) => { w.linhas.push(c.slice()); },
+        update: (linha, c) => { w.linhas[linha - 2] = c.slice(); },
+      };
+      return d;
+    };
+    w.chama = (corpo) => { try { return { ok: true, data: handleRequest(corpo, w.deps()) }; } catch (e) { return { ok: false, status: e.status, msg: e.message, cru: e }; } };
+    w.ultimoCodigo = (para) => { const m = w.correios.filter((x) => x.to === para).pop(); const r = m && /: (\d{6})\b/.exec(m.body); return r ? r[1] : null; };
+    w.cadastrar = (email, chave, extra) => w.chama(Object.assign({ action: "pwRegister", email: email, nome: "Maria Teste", empresa: "Ipanema", mensagem: "Oi", chave: chave || SENHA1 }, extra || {}));
+    w.confirmar = (email) => w.chama({ action: "pwConfirmar", email: email, codigo: w.ultimoCodigo(email) });
+    w.aprovar = (email) => w.chama({ token: "admin", action: "pwDecidir", email: email, acao: "aprovar" });
+    w.entrar = (email, chave) => w.chama({ action: "pwLogin", email: email, chave: chave || SENHA1 });
+    w.pronto = (email, chave) => { w.cadastrar(email, chave); w.agora += 61000; w.confirmar(email); w.aprovar(email); return w.entrar(email, chave); };
+    return w;
+  }
+  const EM = "maria.teste@gmail.com";
+
+  // ---- sign-up
+  let w = mundo();
+  const r1 = w.cadastrar(EM);
+  T(r1.ok && r1.data.enviado === true && w.linhas.length === 1 && w.linhas[0][LG.SIT] === SIT.EMAIL, "sign-up creates a row waiting for e-mail confirmation");
+  T(/^\d{6}$/.test(w.ultimoCodigo(EM) || ""), "a 6-digit code is e-mailed to the address");
+  T(w.correios.every((m) => m.to === EM) && w.correios.length === 1, "no e-mail goes to the administrator before the address is confirmed");
+  const dump = JSON.stringify(w.linhas);
+  T(dump.indexOf(SENHA1) === -1 && w.linhas[0][LG.VER].length === 64 && w.linhas[0][LG.CODIGO].length === 64 && dump.indexOf(w.ultimoCodigo(EM)) === -1, "neither the password key nor the code is stored: only salted HMAC verifiers");
+  T(w.linhas[0][LG.EMAIL] === "mariateste@gmail.com" && w.linhas[0][LG.DIGITADO] === EM, "the e-mail is stored canonically and as typed");
+  T(!w.cadastrar("nao-e-email", SENHA1).ok && w.cadastrar("nao-e-email").status === 400, "an invalid e-mail is refused");
+  w.agora += 61000;
+  T(w.cadastrar("outra@x.com", "curta").status === 400 && w.cadastrar("outra@x.com", SENHA1 + "=").status === 400 && w.cadastrar("outra@x.com", "!".repeat(43)).status === 400 && w.cadastrar("outra@x.com", "a".repeat(44)).status === 400, "only a well-formed derived key is accepted (never a raw password)");
+  T(w.cadastrar("outra@x.com", SENHA1, { nome: "  " }).status === 400, "the name is required");
+  T(w.chama({ action: "pwRegister", email: "z@x.com", nome: 5, chave: SENHA1 }).status === 400 && w.chama({ action: "pwRegister", email: {}, nome: "N", chave: SENHA1 }).status === 400, "odd types are refused");
+  // limits on the e-mails it can trigger
+  w = mundo();
+  w.cadastrar(EM);
+  T(w.cadastrar(EM).status === 429, "a second request within a minute is refused (no e-mail spam)");
+  for (let i = 0; i < 6; i += 1) { w.agora += 61000; w.cadastrar(EM); }
+  T(w.chama({ action: "pwRegister", email: EM, nome: "N", chave: SENHA1 }).status === 429 && w.correios.length <= 5, "at most 5 e-mails per address in 6 hours");
+  w = mundo();
+  let bloqueou = 0;
+  for (let i = 0; i < 70; i += 1) { const r = w.cadastrar("p" + i + "@x.com"); if (r.status === 429) bloqueou += 1; }
+  T(bloqueou >= 8 && w.correios.length <= 60, "no more than 60 e-mails an hour overall");
+  // gmail dots are one address
+  w = mundo(); w.cadastrar("Maria.Teste@gmail.com"); w.agora += 61000; w.cadastrar("mariateste@gmail.com");
+  T(w.linhas.length === 1, "the same Gmail written two ways is one login");
+  // formula / control characters
+  w = mundo(); w.cadastrar("f@x.com", SENHA1, { nome: "=cmd()\n\u0007x", empresa: "+1\r\n2", mensagem: "@SUM\nlinha2" });
+  T(w.linhas[0][LG.NOME].indexOf("\n") === -1 && w.linhas[0][LG.EMPRESA].indexOf("\n") === -1 && w.linhas[0][LG.NOME].indexOf("\u0007") === -1, "names are cleaned of line breaks and control characters (stored as plain text)");
+
+  // ---- e-mail confirmation
+  w = mundo(); w.cadastrar(EM);
+  T(w.chama({ action: "pwConfirmar", email: EM, codigo: "12" }).status === 400 && w.chama({ action: "pwConfirmar", email: EM, codigo: "abc" }).status === 400, "the code must be 6 digits");
+  const errado = w.ultimoCodigo(EM) === "000000" ? "111111" : "000000";
+  T(w.chama({ action: "pwConfirmar", email: EM, codigo: errado }).status === 400 && Number(w.linhas[0][LG.CODIGO_TENT]) === 1, "a wrong code is refused and counted");
+  for (let i = 0; i < 4; i += 1) w.chama({ action: "pwConfirmar", email: EM, codigo: errado });
+  T(w.confirmar(EM).status === 400 && w.linhas[0][LG.SIT] === SIT.EMAIL, "after 5 wrong tries the code is void (even the right one is refused)");
+  w = mundo(); w.cadastrar(EM); w.agora += 16 * 60000;
+  T(w.confirmar(EM).status === 400, "an expired code (15 min) is refused");
+  w = mundo(); w.cadastrar(EM);
+  T(w.chama({ action: "pwConfirmar", email: "quem@x.com", codigo: "123456" }).status === 400, "confirming an address that never signed up gives the same plain refusal");
+  const c1 = w.confirmar(EM);
+  T(c1.ok && c1.data.situacao === SIT.APROVACAO && w.linhas[0][LG.SIT] === SIT.APROVACAO && w.linhas[0][LG.CODIGO] === "", "the right code moves the login to 'waiting for approval' and clears the code");
+  const aviso = w.correios.filter((m) => m.to === GATEWAY_CONFIG.ADMIN_EMAILS.join(",")).pop();
+  T(aviso && aviso.body.indexOf("Maria Teste") !== -1 && aviso.body.indexOf(EM) !== -1 && aviso.body.indexOf("Painel do sistema") !== -1 && aviso.body.indexOf(SENHA1) === -1, "the administrator is e-mailed with the person's details (and never a password)");
+  T(w.confirmar(EM).status === 400, "a code cannot be used twice");
+
+  // ---- signing in before approval
+  T(w.entrar(EM).status === 403 && /aguardando a aprovação/.test(w.entrar(EM).msg), "signing in before approval says it is waiting (only when the password is right)");
+  const errada = w.entrar(EM, SENHA2), desconhecido = w.entrar("ninguem@x.com", SENHA2);
+  T(errada.status === 403 && desconhecido.status === 403 && errada.msg === desconhecido.msg && /incorretos/.test(errada.msg), "a wrong password and an unknown e-mail get exactly the same answer");
+
+  // ---- approval
+  T(w.chama({ token: "viz", action: "pwDecidir", email: EM, acao: "aprovar" }).status === 403 && w.chama({ token: "mas", action: "pwDecidir", email: EM, acao: "aprovar" }).status === 403 && w.chama({ token: "nobody", action: "pwDecidir", email: EM, acao: "aprovar" }).status === 403, "only the system administrator approves (not a Master, Editor or Viewer)");
+  T(w.chama({ token: "admin", action: "pwDecidir", email: EM, acao: "toString" }).status === 400 && w.chama({ token: "admin", action: "pwDecidir", email: EM, acao: "__proto__" }).status === 400 && w.chama({ token: "admin", action: "pwDecidir", email: "x@x.com", acao: "aprovar" }).status === 400, "unknown actions and unknown logins are refused");
+  const ap = w.aprovar(EM);
+  T(ap.ok && w.linhas[0][LG.SIT] === SIT.ATIVO && w.correios.pop().to === EM, "approving activates the login and e-mails the person");
+  T(w.aprovar(EM).status === 400, "approving twice is refused");
+
+  // ---- signing in
+  const en = w.entrar(EM);
+  T(en.ok && /^fs1\.[0-9a-f]+\.\d+\.\d+\.[0-9a-f]{64}$/.test(en.data.token) && en.data.email === EM && en.data.nome === "Maria Teste" && en.data.expiraEm === w.agora + 12 * 3600000, "an active login gets a signed 12-hour session");
+  T(JSON.stringify(en.data).indexOf(w.linhas[0][LG.SAL]) === -1 && JSON.stringify(en.data).indexOf(w.linhas[0][LG.VER]) === -1, "the answer contains no salt or verifier");
+  T(w.entrar("MARIATESTE@gmail.com").ok && w.entrar("maria.teste@GMAIL.com").ok, "the login works with the e-mail written in other ways (Gmail dots / capitals)");
+  T(w.entrar(EM, SENHA2).status === 403 && w.entrar(EM, "curta").status === 403 && w.entrar("", SENHA1).status === 403 && w.chama({ action: "pwLogin", email: EM }).status === 403, "wrong, malformed or missing passwords are all refused with the same message");
+  // the session works like a Google identity: access is decided by the company's Usuários tab
+  const tok = en.data.token;
+  const meSem = w.chama({ token: tok, action: "me" });
+  T(meSem.ok && meSem.data.companies.length === 0 && meSem.data.superAdmin === false, "a signed-in login with no company sees no company (it can ask for access like anyone)");
+  w.state[IPA]["Usuários"].push(["MariaTeste@gmail.com", "Maria", "Visualizador"]);
+  w.agora += 21000; // the 20-second cache of the Usuários tab
+  const meCom = w.chama({ token: tok, action: "me" });
+  T(meCom.ok && meCom.data.companies.length === 1 && meCom.data.companies[0].perfil === "Visualizador", "…and once a Master lists the e-mail, it sees the company with that role");
+  T(w.chama({ token: tok, action: "getValues", spreadsheetId: IPA, range: "Estoque!A1:B2" }).ok, "the session can read what a Viewer may read");
+  T(w.chama({ token: tok, action: "updateValues", spreadsheetId: IPA, range: "Estoque!A9:B9", values: [["x"]] }).status === 403 && w.chama({ token: tok, action: "getValues", spreadsheetId: IPA, range: "Usuários!A2:C" }).status === 403, "…and nothing more (roles are enforced the same way)");
+  T(w.chama({ token: tok, action: "pwListar" }).status === 403 && w.chama({ token: tok, action: "listRequests" }).status === 403, "a session is never an administrator unless listed as one");
+  // ---- session integrity
+  const partes = tok.split(".");
+  const variacoes = {
+    "a changed expiry": ["fs1", partes[1], String(Number(partes[2]) + 9999999), partes[3], partes[4]],
+    "a changed version": ["fs1", partes[1], partes[2], String(Number(partes[3]) + 1), partes[4]],
+    "a changed signature": ["fs1", partes[1], partes[2], partes[3], partes[4].replace(/.$/, partes[4].slice(-1) === "0" ? "1" : "0")],
+    "another person's e-mail": ["fs1", hexDeBytes_(utf8Bytes_("admin@x.com")), partes[2], partes[3], partes[4]],
+    "a missing part": ["fs1", partes[1], partes[2], partes[3]],
+    "an extra part": ["fs1", partes[1], partes[2], partes[3], partes[4], "x"],
+    "a wrong prefix": ["fs2", partes[1], partes[2], partes[3], partes[4]],
+  };
+  Object.keys(variacoes).forEach((nome) => {
+    const r = w.chama({ token: variacoes[nome].join("."), action: "me" });
+    T(!r.ok && r.status === 401, "a forged session is refused: " + nome);
+  });
+  T(w.chama({ token: "fs1." + "a".repeat(700), action: "me" }).status === 401 && w.chama({ token: "fs1.", action: "me" }).status === 401 && w.chama({ token: "fs1", action: "me" }).status === 401, "malformed sessions are refused (401)");
+  const relogio = w.agora; w.agora += 13 * 3600000;
+  T(w.chama({ token: tok, action: "me" }).status === 401, "a session older than 12 hours is refused");
+  w.agora = relogio;
+  T(w.chama({ token: tok, action: "me" }).ok, "…and works again on the clock it was issued for (nothing else changed)");
+
+  // ---- lockout after wrong passwords
+  w = mundo(); w.pronto(EM);
+  for (let i = 0; i < 5; i += 1) w.entrar(EM, SENHA2);
+  const bloq = w.entrar(EM, SENHA1);
+  T(bloq.status === 429 && /15 minutos/.test(bloq.msg), "5 wrong passwords lock the account for 15 minutes (even the right password is refused meanwhile)");
+  w.agora += 15 * 60000 + 1000;
+  T(w.entrar(EM, SENHA1).ok, "…and it opens again after 15 minutes");
+  w = mundo(); w.pronto(EM);
+  for (let i = 0; i < 5; i += 1) w.entrar("ninguem@x.com", SENHA2);
+  T(w.entrar("ninguem@x.com", SENHA2).status === 429, "unknown addresses are throttled too (no way to tell them apart)");
+  w = mundo(); w.pronto(EM);
+  for (let i = 0; i < 4; i += 1) w.entrar(EM, SENHA2);
+  w.entrar(EM, SENHA1); for (let i = 0; i < 4; i += 1) w.entrar(EM, SENHA2);
+  T(w.entrar(EM, SENHA1).ok, "a successful login clears the count of failures");
+
+  // ---- forgot password
+  w = mundo(); w.pronto(EM);
+  w.agora += 61000; const antes = w.correios.length;
+  const e1 = w.chama({ action: "pwEsqueci", email: EM }), e2 = w.chama({ action: "pwEsqueci", email: "quem@x.com" });
+  T(e1.ok && e2.ok && JSON.stringify(e1.data) === JSON.stringify(e2.data), "'forgot password' answers the same for a known and an unknown address");
+  T(w.correios.length === antes + 1 && w.ultimoCodigo(EM) !== null, "…but only a known address gets the code by e-mail");
+  const cod = w.ultimoCodigo(EM);
+  T(w.chama({ action: "pwRedefinir", email: EM, codigo: cod === "000000" ? "111111" : "000000", chave: SENHA2 }).status === 400, "a wrong reset code is refused");
+  T(w.chama({ action: "pwRedefinir", email: EM, codigo: cod, chave: "curta" }).status === 400, "the new password key must be well-formed");
+  const tokAntes = w.entrar(EM).data.token;
+  const rd = w.chama({ action: "pwRedefinir", email: EM, codigo: cod, chave: SENHA2 });
+  T(rd.ok && w.entrar(EM, SENHA1).status === 403 && w.entrar(EM, SENHA2).ok, "with the right code the password changes: the old one stops, the new one works");
+  T(w.chama({ token: tokAntes, action: "me" }).status === 401, "resetting the password ends every open session");
+  T(w.chama({ action: "pwRedefinir", email: EM, codigo: cod, chave: SENHA3 }).status === 400, "a reset code cannot be used twice");
+  w = mundo(); w.cadastrar(EM); w.agora += 61000;
+  w.chama({ action: "pwEsqueci", email: EM });
+  T(w.ultimoCodigo(EM) !== null && w.chama({ action: "pwRedefinir", email: EM, codigo: w.ultimoCodigo(EM), chave: SENHA2 }).status === 400, "a login that is not active yet cannot use 'forgot password' to skip approval");
+
+  // ---- changing the password while signed in
+  w = mundo(); const sessao = w.pronto(EM).data.token;
+  T(w.chama({ token: sessao, action: "pwTrocarSenha", atual: SENHA2, nova: SENHA3 }).status === 403, "changing the password needs the current one");
+  T(w.chama({ token: sessao, action: "pwTrocarSenha", atual: "curta", nova: SENHA3 }).status === 400 && w.chama({ token: sessao, action: "pwTrocarSenha", atual: SENHA1, nova: "x" }).status === 400, "malformed keys are refused");
+  const tr = w.chama({ token: sessao, action: "pwTrocarSenha", atual: SENHA1, nova: SENHA3 });
+  T(tr.ok && /^fs1\./.test(tr.data.token) && w.entrar(EM, SENHA1).status === 403 && w.entrar(EM, SENHA3).ok, "with the current password, the password changes");
+  T(w.chama({ token: sessao, action: "me" }).status === 401 && w.chama({ token: tr.data.token, action: "me" }).ok, "the old session ends; the new one (returned) keeps the person signed in");
+  T(w.chama({ token: "viz", action: "pwTrocarSenha", atual: SENHA1, nova: SENHA3 }).status === 403, "a Google session cannot use this (it has no app password)");
+  w = mundo(); const s2 = w.pronto(EM).data.token;
+  for (let i = 0; i < 5; i += 1) w.chama({ token: s2, action: "pwTrocarSenha", atual: SENHA2, nova: SENHA3 });
+  T(w.chama({ token: s2, action: "pwTrocarSenha", atual: SENHA1, nova: SENHA3 }).status === 429, "guessing the current password through this door is throttled too");
+
+  // ---- administration
+  w = mundo(); w.pronto(EM); w.agora += 61000; w.cadastrar("outro@x.com", SENHA2); w.agora += 61000; w.confirmar("outro@x.com");
+  const lista = w.chama({ token: "admin", action: "pwListar" });
+  T(lista.ok && lista.data.pendentes.length === 1 && lista.data.ativos.length === 1 && lista.data.pendentes[0].email === "outro@x.com", "the administrator sees who is waiting and who is active");
+  const listaTxt = JSON.stringify(lista.data);
+  T(listaTxt.indexOf(w.linhas[0][LG.VER]) === -1 && listaTxt.indexOf(w.linhas[0][LG.SAL]) === -1 && !/Sal|Verificador|c\[/.test(listaTxt) && listaTxt.indexOf("codigo") === -1, "the list never contains a salt, verifier or code");
+  T(w.chama({ token: "mas", action: "pwListar" }).status === 403, "a company Master cannot list logins");
+  const sessaoAtiva = w.entrar(EM).data.token;
+  const bl = w.chama({ token: "admin", action: "pwDecidir", email: EM, acao: "bloquear" });
+  T(bl.ok && w.entrar(EM).status === 403 && w.chama({ token: sessaoAtiva, action: "me" }).status === 401, "blocking a login ends its open sessions at once and stops new ones");
+  T(w.chama({ token: "admin", action: "pwDecidir", email: EM, acao: "bloquear" }).status === 400, "blocking twice is refused");
+  T(w.chama({ token: "admin", action: "pwDecidir", email: EM, acao: "reativar" }).ok && w.entrar(EM).ok, "reactivating lets the same password work again");
+  const rec = w.chama({ token: "admin", action: "pwDecidir", email: "outro@x.com", acao: "recusar", nota: "Não conhecemos." });
+  T(rec.ok && w.correios.pop().body.indexOf("Não conhecemos.") !== -1 && w.entrar("outro@x.com", SENHA2).status === 403, "declining e-mails the person (with the note) and keeps the login shut");
+  // the administrator can also be a password login
+  w = mundo(); w.pronto(ADMIN_EMAIL, SENHA1);
+  T(w.chama({ token: w.entrar(ADMIN_EMAIL).data.token, action: "pwListar" }).ok, "an administrator who signs in with a password gets the administrator's powers");
+
+  // ---- failures never leak internals
+  w = mundo();
+  const dRuim = w.deps(); dRuim.logins.list = () => { throw new Error("SEGREDO interno da planilha 1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd"); };
+  const vaz = (() => { try { handleRequest({ action: "pwLogin", email: EM, chave: SENHA1 }, dRuim); return null; } catch (e) { return e; } })();
+  T(vaz instanceof GatewayError_ && vaz.status === 500 && !/SEGREDO|1AbCd|Detalhe/.test(vaz.message), "an unexpected failure in a public action reveals nothing internal");
+  const dMail = w.deps(); dMail.mail = { send: () => { throw new Error("mail down"); } };
+  const semMail = (() => { try { handleRequest({ action: "pwRegister", email: "q@x.com", nome: "Q", chave: SENHA1 }, dMail); return null; } catch (e) { return e; } })();
+  T(semMail && semMail.status === 503 && /e-mail/.test(semMail.message), "if the code cannot be e-mailed the person is told to try again (no false success)");
+  // the Google path is untouched
+  T(w.chama({ token: "mas", action: "me" }).ok && w.chama({ token: "zzz", action: "me" }).status === 401, "Google sign-in still works exactly as before, and bad Google tokens are still refused");
+  // secrets are created once and only in private properties (real dependency shape)
+  T(typeof secretsDeps_ === "function" && typeof loginsDeps_ === "function" && PW_PUBLIC_ACTIONS.length === 5, "the real dependencies exist (script properties + registry sheet)");
+})();
+
 // --- access requests (anyone signed in with Google may ask; only the admin sees/answers)
 (function () {
   const state = freshState();

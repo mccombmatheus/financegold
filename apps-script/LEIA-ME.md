@@ -63,6 +63,17 @@ Quem entra com uma conta Google que ainda não tem acesso vê um formulário par
 - Limites contra abuso: um pedido em análise por e-mail, um minuto entre tentativas, textos curtos e sem quebras de linha nos campos curtos, no máximo 300 pedidos pendentes. O envio de e-mails tem limite diário do Google (cerca de 100 destinatários por dia em conta gratuita).
 - Ajuste `APP_URL` no `Code.gs` se o endereço do app mudar (ele vai nos e-mails).
 
+## Login com e-mail e senha
+
+Além do Google, a pessoa pode criar um acesso com **e-mail e senha** (tela de entrada → **Criar acesso**). O fluxo é: a pessoa preenche nome, e-mail e senha → recebe um **código de 6 dígitos por e-mail** (vale 15 minutos) → o acesso fica **aguardando o administrador** → você aprova no **Painel do sistema → Logins com senha** (Aprovar, Recusar, Bloquear, Reativar) → a pessoa entra. Quem já está cadastrado numa empresa (aba Usuários) continua com o mesmo perfil; o login só prova quem é a pessoa.
+
+- **Senhas nunca ficam guardadas.** O navegador calcula uma chave (PBKDF2-SHA256, 210.000 voltas) e só ela é enviada; o servidor guarda um HMAC dessa chave com um sal individual. Você e eu não conseguimos ver nem recuperar uma senha; quem esquece usa **Esqueci minha senha** (código por e-mail).
+- **Segredos do servidor:** `PW_PEPPER` e `PW_SESSION_KEY` são criados sozinhos em Propriedades do script na primeira vez. **Não apague.** Se forem apagados, todas as senhas deixam de valer (as pessoas usam "Esqueci minha senha") e as sessões caem.
+- **Proteções:** 5 senhas erradas bloqueiam por 15 minutos (também para e-mails que não existem, para não revelar quem está cadastrado); códigos de 6 dígitos com 5 tentativas; limite de e-mails por endereço e por hora; respostas iguais para e-mail existente e inexistente; sessão de 12 horas, encerrada ao trocar a senha ou bloquear.
+- **Trocar a senha:** logado, **Ajustes → Senha de acesso**.
+- Como é uma versão nova do `Code.gs`, depois de colar é preciso **Implantar → Gerenciar implantações → lápis → Nova versão → Implantar**. O e-mail usa a mesma permissão já autorizada (`script.send_mail`).
+- Limite: o envio de e-mails tem cota diária do Google (cerca de 100 por dia em conta gratuita).
+
 ## Separação: desenvolvedor x pessoas das empresas
 
 - **Quem acessa os dados de uma empresa:** só as pessoas cadastradas no perfil dela (aba Usuários), pelos Masters dela.

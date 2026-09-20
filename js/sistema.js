@@ -129,7 +129,7 @@ function setupSistema() {
   refreshButton.addEventListener("click", async () => {
     refreshButton.disabled = true;
     refreshButton.textContent = "Atualizando…";
-    await Promise.all([loadPedidosSistema(), loadEmpresasSistema()]);
+    await Promise.all([loadPedidosSistema(), loadEmpresasSistema(), carregarLoginsSistema()]);
     refreshButton.textContent = "Atualizado";
     setTimeout(() => {
       refreshButton.textContent = "Atualizar";
@@ -155,6 +155,7 @@ function showSistemaScreen() {
   document.getElementById("btn-sistema-abrir-empresa").hidden = currentCompanies.length === 0;
   loadPedidosSistema();
   loadEmpresasSistema();
+  carregarLoginsSistema();
 }
 
 // ---- access requests ------------------------------------------------------
