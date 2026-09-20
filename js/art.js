@@ -143,7 +143,7 @@ function buildLogoMark(size) {
 // cube logo: things that SEEM something and could be, but are not literal (an
 // ingot stack that could be boxes, two cubes with ears that could be a cat and a
 // dog, a hex nut that could be a gear...). Isometric geometry only: no images.
-// Joalheria: a squat box seen from the side | Petshop: a cat and a dog (explicit request) | Comércio: a cube
+// Joalheria: a gold bar seen from the side | Petshop: a cat and a dog (explicit request) | Comércio: a cube
 // with a handle | Serviços: a hex nut | Alimentação: a lidded cylinder |
 // Saúde: an extruded plus | Outro: the two cubes.
 // ---------------------------------------------------------------------------
@@ -190,13 +190,12 @@ function pontosElipse(cx, cy, z, raio, passos) {
   return pts;
 }
 
-function desenhoCaixaLateral() {
-  // a squat box seen from the side, almost nothing on it but a lid line: a jewelry box, a cube, a block
-  const frente = [[0, 20], [60, 20], [60, 80], [0, 80], [0, 20]];
-  const topo = [[0, 20], [22, 6], [82, 6], [60, 20]];
-  const lateral = [[60, 20], [82, 6], [82, 66], [60, 80]];
-  const tampa = [[0, 38], [60, 38], [82, 24]];
-  return [frente, topo, lateral, tampa];
+function desenhoBarraDeOuro() {
+  // a gold bar seen from the side: sloped ends, a thin top, nothing else
+  const frente = [[0, 72], [76, 72], [64, 36], [12, 36], [0, 72]];
+  const topo = [[12, 36], [32, 24], [84, 24], [64, 36]];
+  const ponta = [[84, 24], [96, 60], [76, 72]];
+  return [frente, topo, ponta];
 }
 
 // The one segment mark that IS a picture, on the user's explicit request: a cat and a dog, low-poly facets.
@@ -280,7 +279,7 @@ function desenhoCubosLogo() {
 }
 
 const MARCAS_SEGMENTO = {
-  joalheria: { desenho: desenhoCaixaLateral },
+  joalheria: { desenho: desenhoBarraDeOuro },
   petshop: { desenho: desenhoGatoECachorro },
   comercio: { desenho: desenhoCuboComAlca },
   servicos: { desenho: desenhoPorca },

@@ -63,7 +63,7 @@ const KPI_ICONS = {
 // One small icon per segment for the quantity tiles. Fixed developer-authored
 // strings, picked by a whitelisted segment id (never built from data).
 const ICONES_SEGMENTO = {
-  joalheria: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 9h13v11H4z"/><path d="M4 9l4-4h13l-4 4M21 5v11l-4 4M4 13h13"/></svg>',
+  joalheria: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M2 18h14l-3-7H5z"/><path d="M5 11l3-3h9l-4 3M17 8l4 7-5 3"/></svg>',
   petshop: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="6" cy="10" r="2"/><circle cx="10" cy="5.5" r="2"/><circle cx="15" cy="5.5" r="2"/><circle cx="19" cy="10" r="2"/><path d="M12 12c-3 0-6 3-6 5.5 0 2 1.7 2.7 3.2 2.3 1-.3 1.8-.6 2.8-.6s1.8.3 2.8.6c1.5.4 3.2-.3 3.2-2.3 0-2.5-3-5.5-6-5.5z"/></svg>',
   comercio: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 9h14v11H5z"/><path d="M9 9V6h6v3"/></svg>',
   servicos: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 9l3 1.7v3.4L12 15.8 9 14.1v-3.4z"/></svg>',
