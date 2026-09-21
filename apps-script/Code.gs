@@ -37,12 +37,12 @@ const GATEWAY_CONFIG = {
   ADMIN_EMAILS: ["finanponto@gmail.com"],
 
   // Where people are sent in the e-mails about access requests.
-  APP_URL: "https://mccombmatheus.github.io/financegold/",
+  APP_URL: "https://app-finan.github.io/",
 };
 
 // Shown by the public banner (a GET on the /exec URL) so it is easy to confirm
 // which version of this file is really deployed.
-const GATEWAY_VERSION = "2026-09-21-login-com-senha";
+const GATEWAY_VERSION = "2026-09-21-novo-link";
 
 const USUARIOS_TAB = "Usuários";
 const LOOKUP_TABS = ["Lojas", "Contas", "Empresas", "Categoria", "Pessoa", "Produto", "Tipo de Produto", "Marcas"];
