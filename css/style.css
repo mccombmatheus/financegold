@@ -1,8 +1,9 @@
 :root {
   /* Direction "Ouro" (see the Visual design system note in CLAUDE.md): a
-     near-black graphite ground, one gold accent, technical mono labels. The app
-     is dark-only on purpose — the whole look depends on it — so there is no
-     light theme and no prefers-color-scheme block. */
+     near-black graphite ground, one gold accent, technical mono labels. Dark
+     is still the default and the only look for the auth screens (a deliberate
+     brand panel, not a "theme"), but the app itself (#app-shell) can switch to
+     a light variant, "Papel" — see the [data-theme="light"] block below. */
   color-scheme: dark;
   --color-bg: #060504;
   --color-surface: #0e0c08;
@@ -19,6 +20,15 @@
   --color-accent-contrast: #191203;
   --color-accent-wash: rgba(227, 179, 65, 0.1);
   --color-edge: rgba(227, 179, 65, 0.34);
+  /* --color-accent itself is a fixed brand color, used as a solid FILL (button
+     backgrounds, active pills) with --color-accent-contrast ink on top — that
+     pairing is readable regardless of theme, so it never changes below.
+     --color-accent-text is the same gold used as a FOREGROUND (text, borders,
+     thin strokes) directly on the page/card background: on the dark ground
+     #e3b341 reads fine there too, but on the light "Papel" ground it fails
+     contrast (~1.9:1) and would repeat the old .btn-logout invisible-button
+     bug — so this token gets its own, darker value in the light block below. */
+  --color-accent-text: var(--color-accent);
 
   /* "Success"/positive is the gold accent itself (entradas, favorable trends);
      danger is a warm red, so the two are never confused. */
@@ -57,6 +67,103 @@
   --good-text: #6fe0a0;
 }
 
+/* Light theme, direction "Papel" (approved by the user 2026-09-26 from two
+   prototyped directions — see the design canvas linked from that session).
+   Applies document-wide (so it also reaches things mounted outside #app-shell,
+   like the command palette) EXCEPT the auth-only screens, which are re-pinned
+   to the dark palette right below: their near-black brand panel is a fixed
+   identity choice, not a "theme," and was never part of what was prototyped.
+   The brand gold (--color-accent, its hover/contrast/wash) is deliberately
+   NOT overridden here — same gold in both themes, only its foreground/text
+   role (--color-accent-text) gets a darker, readable value. Chart series were
+   re-validated for this surface with the dataviz skill's validate_palette.py
+   ("#9c7a0a,#0668c4,#067a5c,#b84e09,#7a3fd1,#c22572" --mode light --surface
+   "#fffdf8" → all 6 checks PASS); re-run that check before changing any of
+   the six below. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #f7f2e3;
+  --color-surface: #fffdf8;
+  --color-surface-2: #f0e9d6;
+  --color-text: #221a0c;
+  --color-muted: #6d6248;
+  --color-subtle: #8c8067;
+  --color-border: #e1d4b0;
+  --color-gridline: #ece2c9;
+  --color-baseline: #d5c495;
+
+  --color-accent-text: #8a6410;
+  --color-accent-wash: rgba(154, 118, 20, 0.16);
+  --color-edge: rgba(138, 100, 16, 0.35);
+
+  --color-success: #8a6410;
+  --color-success-wash: rgba(138, 100, 16, 0.12);
+  --color-danger: #c1402f;
+  --color-danger-wash: rgba(193, 64, 47, 0.1);
+
+  --shadow-sm: 0 1px 2px rgba(34, 26, 12, 0.06);
+  --shadow-md: 0 10px 28px rgba(34, 26, 12, 0.08);
+  --shadow-accent: 0 6px 20px rgba(154, 120, 10, 0.22);
+
+  --series-1: #9c7a0a;
+  --series-2: #0668c4;
+  --series-3: #067a5c;
+  --series-4: #b84e09;
+  --series-5: #7a3fd1;
+  --series-6: #c22572;
+
+  --diverging-pos: #9c7a0a;
+  --diverging-neg: #c1402f;
+
+  --good-text: #1f7a49;
+}
+
+/* The auth-only screens (the split brand panel + the Painel do sistema's
+   access-request flow) stay dark regardless of [data-theme] — re-declaring
+   every token light mode touches, at higher specificity, pins them back.
+   #app-shell and #sistema-screen are NOT listed here: both follow the toggle. */
+:root[data-theme="light"] #login-screen,
+:root[data-theme="light"] #company-picker-screen,
+:root[data-theme="light"] #cadastro-screen,
+:root[data-theme="light"] #acesso-negado-screen,
+:root[data-theme="light"] #solicitar-acesso-screen {
+  color-scheme: dark;
+  --color-bg: #060504;
+  --color-surface: #0e0c08;
+  --color-surface-2: #15120b;
+  --color-text: #f4efe4;
+  --color-muted: #9b9078;
+  --color-subtle: #8a7f66;
+  --color-border: #2a2417;
+  --color-gridline: #1c1810;
+  --color-baseline: #3a3220;
+
+  --color-accent-text: #e3b341;
+  --color-accent-wash: rgba(227, 179, 65, 0.1);
+  --color-edge: rgba(227, 179, 65, 0.34);
+
+  --color-success: #e3b341;
+  --color-success-wash: rgba(227, 179, 65, 0.12);
+  --color-danger: #ff6b5a;
+  --color-danger-wash: rgba(255, 107, 90, 0.12);
+
+  --shadow-sm: none;
+  --shadow-md: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --shadow-accent: 0 6px 24px rgba(227, 179, 65, 0.22);
+
+  --series-1: #b5890b;
+  --series-2: #0694fb;
+  --series-3: #0ba985;
+  --series-4: #e7620b;
+  --series-5: #a767fe;
+  --series-6: #f63398;
+
+  --diverging-pos: #b5890b;
+  --diverging-neg: #ff6b5a;
+
+  --good-text: #6fe0a0;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -71,7 +178,7 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: var(--color-accent);
+  border-color: var(--color-accent-text);
   box-shadow: 0 0 0 3px var(--color-accent-wash);
 }
 
@@ -533,8 +640,8 @@ html.retomando #login-screen {
 }
 
 .sidebar-collapse-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: var(--color-accent-text);
+  color: var(--color-accent-text);
 }
 
 .sidebar-brand-row {
@@ -626,7 +733,7 @@ html.retomando #login-screen {
 .nav-item.active {
   background: var(--color-accent-wash);
   border-color: var(--color-edge);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-weight: 600;
 }
 
@@ -677,7 +784,7 @@ html.retomando #login-screen {
 }
 
 .nav-subitem.active {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   background: var(--color-accent-wash);
   box-shadow: none;
 }
@@ -735,8 +842,8 @@ html.retomando #login-screen {
 }
 
 .btn-logout:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: var(--color-accent-text);
+  color: var(--color-accent-text);
 }
 
 .app-main {
@@ -809,7 +916,7 @@ html.retomando #login-screen {
 }
 
 .command-bar-trigger:hover {
-  border-color: var(--color-accent);
+  border-color: var(--color-accent-text);
 }
 
 .command-bar-trigger svg {
@@ -906,7 +1013,7 @@ html.retomando #login-screen {
 
 .command-palette-item.active {
   background: var(--color-accent-wash);
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 .command-palette-empty {
@@ -1052,8 +1159,8 @@ td select {
 }
 
 .icon-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: var(--color-accent-text);
+  color: var(--color-accent-text);
 }
 
 .icon-btn:disabled {
@@ -1074,7 +1181,7 @@ td select {
 }
 
 .export-btn:hover {
-  border-color: var(--color-accent);
+  border-color: var(--color-accent-text);
 }
 
 /* .form-actions button's descendant selector otherwise outranks .export-btn
@@ -1089,7 +1196,7 @@ td select {
 }
 
 .form-actions button.export-btn:hover {
-  border-color: var(--color-accent);
+  border-color: var(--color-accent-text);
   transform: none;
   box-shadow: none;
 }
@@ -1326,14 +1433,14 @@ td select {
 
 .stat-spark-line {
   fill: none;
-  stroke: var(--color-accent);
+  stroke: var(--color-accent-text);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
 }
 
 .stat-spark-fill {
-  fill: var(--color-accent);
+  fill: var(--color-accent-text);
   opacity: 0.14;
 }
 
@@ -1360,7 +1467,7 @@ td select {
 .activity-see-all {
   background: none;
   border: none;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
@@ -1516,7 +1623,7 @@ td select {
   margin-top: 0.75rem;
   background: none;
   border: none;
-  color: var(--color-accent);
+  color: var(--color-accent-text);
   font-size: 0.8rem;
   cursor: pointer;
   padding: 0;
@@ -1644,7 +1751,7 @@ td select {
 }
 
 .estoque-action-btn:hover {
-  border-color: var(--color-accent);
+  border-color: var(--color-accent-text);
 }
 
 .estoque-inline-panel {
@@ -1825,8 +1932,8 @@ td select {
 }
 
 .sidebar-mobile-toggle:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: var(--color-accent-text);
+  color: var(--color-accent-text);
 }
 
 .sidebar-backdrop {
@@ -2553,8 +2660,8 @@ td select {
 }
 
 .usuario-action-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+  border-color: var(--color-accent-text);
+  color: var(--color-accent-text);
 }
 
 .usuario-action-primary {
@@ -2914,7 +3021,7 @@ td select {
 }
 
 .sistema-contador {
-  color: var(--color-accent);
+  color: var(--color-accent-text);
 }
 
 @media (max-width: 860px) {
@@ -3022,7 +3129,7 @@ td select {
 }
 
 .btn-ver-senha:focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--color-accent-text);
   outline-offset: 1px;
 }
 
